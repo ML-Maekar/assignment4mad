@@ -1,112 +1,245 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import React from 'react';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
-import { ExternalLink } from '@/components/external-link';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Collapsible } from '@/components/ui/collapsible';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Fonts } from '@/constants/theme';
+import {
+  ThemePreference,
+  useAppTheme,
+} from '@/contexts/AppThemeContext';
 
-export default function TabTwoScreen() {
+type ThemeOption = {
+  label: string;
+  value: ThemePreference;
+  description: string;
+};
+
+const themeOptions: ThemeOption[] = [
+  {
+    label: 'Use Device Theme',
+    value: 'system',
+    description: 'Automatically follows your phone light or dark mode setting.',
+  },
+  {
+    label: 'Light Mode',
+    value: 'light',
+    description: 'Always use the light theme.',
+  },
+  {
+    label: 'Dark Mode',
+    value: 'dark',
+    description: 'Always use the dark theme.',
+  },
+];
+
+export default function SettingScreen() {
+  const { colors, themePreference, activeTheme, setThemePreference } =
+    useAppTheme();
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#D0D0D0', dark: '#353636' }}
-      headerImage={
-        <IconSymbol
-          size={310}
-          color="#808080"
-          name="chevron.left.forwardslash.chevron.right"
-          style={styles.headerImage}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText
-          type="title"
-          style={{
-            fontFamily: Fonts.rounded,
-          }}>
-          Explore
-        </ThemedText>
-      </ThemedView>
-      <ThemedText>This app includes example code to help you get started.</ThemedText>
-      <Collapsible title="File-based routing">
-        <ThemedText>
-          This app has two screens:{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/explore.tsx</ThemedText>
-        </ThemedText>
-        <ThemedText>
-          The layout file in <ThemedText type="defaultSemiBold">app/(tabs)/_layout.tsx</ThemedText>{' '}
-          sets up the tab navigator.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/router/introduction">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Android, iOS, and web support">
-        <ThemedText>
-          You can open this project on Android, iOS, and the web. To open the web version, press{' '}
-          <ThemedText type="defaultSemiBold">w</ThemedText> in the terminal running this project.
-        </ThemedText>
-      </Collapsible>
-      <Collapsible title="Images">
-        <ThemedText>
-          For static images, you can use the <ThemedText type="defaultSemiBold">@2x</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">@3x</ThemedText> suffixes to provide files for
-          different screen densities
-        </ThemedText>
-        <Image
-          source={require('@/assets/images/react-logo.png')}
-          style={{ width: 100, height: 100, alignSelf: 'center' }}
-        />
-        <ExternalLink href="https://reactnative.dev/docs/images">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Light and dark mode components">
-        <ThemedText>
-          This template has light and dark mode support. The{' '}
-          <ThemedText type="defaultSemiBold">useColorScheme()</ThemedText> hook lets you inspect
-          what the user&apos;s current color scheme is, and so you can adjust UI colors accordingly.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Animations">
-        <ThemedText>
-          This template includes an example of an animated component. The{' '}
-          <ThemedText type="defaultSemiBold">components/HelloWave.tsx</ThemedText> component uses
-          the powerful{' '}
-          <ThemedText type="defaultSemiBold" style={{ fontFamily: Fonts.mono }}>
-            react-native-reanimated
-          </ThemedText>{' '}
-          library to create a waving hand animation.
-        </ThemedText>
-        {Platform.select({
-          ios: (
-            <ThemedText>
-              The <ThemedText type="defaultSemiBold">components/ParallaxScrollView.tsx</ThemedText>{' '}
-              component provides a parallax effect for the header image.
-            </ThemedText>
-          ),
-        })}
-      </Collapsible>
-    </ParallaxScrollView>
+    <ScrollView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      contentContainerStyle={styles.content}
+    >
+      <View style={styles.header}>
+        <Text style={[styles.title, { color: colors.text }]}>Settings</Text>
+
+        <Text style={[styles.subtitle, { color: colors.subtitle }]}>
+          Choose how STEMM Lab should appear on this device.
+        </Text>
+      </View>
+
+      <View
+        style={[
+          styles.card,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+          },
+        ]}
+      >
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>
+          App Theme
+        </Text>
+
+        <Text style={[styles.sectionDescription, { color: colors.subtitle }]}>
+          Active theme: {activeTheme === 'dark' ? 'Dark Mode' : 'Light Mode'}
+        </Text>
+
+        <View style={styles.optionsContainer}>
+          {themeOptions.map((option) => {
+            const selected = themePreference === option.value;
+
+            return (
+              <Pressable
+                key={option.value}
+                onPress={() => setThemePreference(option.value)}
+                style={({ pressed }) => [
+                  styles.option,
+                  {
+                    borderColor: selected ? colors.tint : colors.border,
+                    backgroundColor: selected
+                      ? `${colors.tint}20`
+                      : colors.background,
+                  },
+                  pressed && styles.optionPressed,
+                ]}
+              >
+                <View style={styles.optionTextContainer}>
+                  <Text style={[styles.optionTitle, { color: colors.text }]}>
+                    {option.label}
+                  </Text>
+
+                  <Text
+                    style={[
+                      styles.optionDescription,
+                      { color: colors.subtitle },
+                    ]}
+                  >
+                    {option.description}
+                  </Text>
+                </View>
+
+                <View
+                  style={[
+                    styles.radioOuter,
+                    {
+                      borderColor: selected ? colors.tint : colors.subtitle,
+                    },
+                  ]}
+                >
+                  {selected && (
+                    <View
+                      style={[
+                        styles.radioInner,
+                        {
+                          backgroundColor: colors.tint,
+                        },
+                      ]}
+                    />
+                  )}
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+
+      <View
+        style={[
+          styles.infoCard,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+          },
+        ]}
+      >
+        <Text style={[styles.infoTitle, { color: colors.text }]}>
+          How this works
+        </Text>
+
+        <Text style={[styles.infoText, { color: colors.subtitle }]}>
+          Device theme follows your phone settings. Light Mode and Dark Mode
+          override the phone setting and stay saved when you close the app.
+        </Text>
+      </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  headerImage: {
-    color: '#808080',
-    bottom: -90,
-    left: -35,
-    position: 'absolute',
+  container: {
+    flex: 1,
   },
-  titleContainer: {
+  content: {
+    padding: 20,
+    paddingTop: 60,
+    paddingBottom: 40,
+  },
+  header: {
+    marginBottom: 24,
+  },
+  title: {
+    fontSize: 34,
+    fontWeight: '800',
+  },
+  subtitle: {
+    marginTop: 8,
+    fontSize: 16,
+    lineHeight: 22,
+  },
+  card: {
+    borderWidth: 1,
+    borderRadius: 22,
+    padding: 18,
+  },
+  sectionTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  sectionDescription: {
+    marginTop: 6,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  optionsContainer: {
+    marginTop: 18,
+    gap: 12,
+  },
+  option: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 16,
     flexDirection: 'row',
-    gap: 8,
+    alignItems: 'center',
+  },
+  optionPressed: {
+    transform: [{ scale: 0.98 }],
+    opacity: 0.85,
+  },
+  optionTextContainer: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  optionTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  optionDescription: {
+    marginTop: 4,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  radioOuter: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  radioInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  infoCard: {
+    marginTop: 18,
+    borderWidth: 1,
+    borderRadius: 22,
+    padding: 18,
+  },
+  infoTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  infoText: {
+    marginTop: 8,
+    fontSize: 14,
+    lineHeight: 20,
   },
 });
