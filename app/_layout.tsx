@@ -8,6 +8,7 @@ import { StatusBar } from 'expo-status-bar';
 import React from 'react';
 import 'react-native-reanimated';
 
+import FloatingHomeButton from '@/components/FloatingHomeButton';
 import {
   ThemeProvider as AppThemeProvider,
   useAppTheme,
@@ -39,56 +40,9 @@ function RootLayoutContent() {
             title: 'Modal',
           }}
         />
-
-        <Stack.Screen
-          name="screen-one"
-          options={{
-            title: 'Parachute Drop',
-          }}
-        />
-
-        <Stack.Screen
-          name="screen-two"
-          options={{
-            title: 'Sound Pollution',
-          }}
-        />
-
-        <Stack.Screen
-          name="screen-three"
-          options={{
-            title: 'Hand Fan',
-          }}
-        />
-
-        <Stack.Screen
-          name="screen-four"
-          options={{
-            title: 'Earthquake Structure',
-          }}
-        />
-
-        <Stack.Screen
-          name="screen-five"
-          options={{
-            title: 'Human Performance',
-          }}
-        />
-
-        <Stack.Screen
-          name="screen-six"
-          options={{
-            title: 'Reaction Board',
-          }}
-        />
-
-        <Stack.Screen
-          name="screen-seven"
-          options={{
-            title: 'Breathing Trainer',
-          }}
-        />
       </Stack>
+
+      <FloatingHomeButton />
 
       <StatusBar style={activeTheme === 'dark' ? 'light' : 'dark'} />
     </NavigationThemeProvider>
