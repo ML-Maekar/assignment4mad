@@ -31,7 +31,7 @@ export default function RegisterScreen() {
 
       Alert.alert("Success", "Account created successfully.");
 
-      router.replace("/(tabs)/home");
+      router.replace("/team_setup");
     } catch (error: any) {
       Alert.alert("Registration failed", error.message);
     }
@@ -70,7 +70,8 @@ export default function RegisterScreen() {
         <Text style={styles.link}>Already have an account? Login</Text>
       </Pressable>
 
-      <Pressable onPress={() => router.replace("/(tabs)/home")}>
+      <Pressable onPress={() => router.replace("/team_setup"
+      )}>
         <Text style={styles.skipLink}>Skip for now</Text>
       </Pressable>
     </View>

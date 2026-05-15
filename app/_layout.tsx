@@ -24,6 +24,7 @@ function RootLayoutContent() {
         <Stack.Screen name="index" />
         <Stack.Screen name="register" />
         <Stack.Screen name="login" />
+        <Stack.Screen name="team_setup" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen
           name="modal"
