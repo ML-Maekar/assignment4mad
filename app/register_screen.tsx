@@ -9,24 +9,31 @@ import {
   View,
 } from "react-native";
 
-import { loginUser } from "../services/authService";
+import { registerUser } from "../services/authService";
 
-export default function LoginScreen() {
+export default function RegisterScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  const handleLogin = async () => {
+  const handleRegister = async () => {
     if (!email || !password) {
       Alert.alert("Missing details", "Please enter email and password.");
       return;
     }
 
+    if (password.length < 6) {
+      Alert.alert("Weak password", "Password must be at least 6 characters.");
+      return;
+    }
+
     try {
-      await loginUser(email.trim(), password);
+      await registerUser(email.trim(), password);
+
+      Alert.alert("Success", "Account created successfully.");
 
       router.replace("/(tabs)/home");
     } catch (error: any) {
-      Alert.alert("Login failed", error.message);
+      Alert.alert("Registration failed", error.message);
     }
   };
 
@@ -34,7 +41,7 @@ export default function LoginScreen() {
     <View style={styles.container}>
       <Text style={styles.title}>STEMM Lab</Text>
 
-      <Text style={styles.subtitle}>Login to continue</Text>
+      <Text style={styles.subtitle}>Create an account to continue</Text>
 
       <TextInput
         style={styles.input}
@@ -55,12 +62,16 @@ export default function LoginScreen() {
         onChangeText={setPassword}
       />
 
-      <Pressable style={styles.button} onPress={handleLogin}>
-        <Text style={styles.buttonText}>Login</Text>
+      <Pressable style={styles.button} onPress={handleRegister}>
+        <Text style={styles.buttonText}>Register</Text>
       </Pressable>
 
-      <Pressable onPress={() => router.replace("/register_screen")}>
-        <Text style={styles.link}>Back to Register</Text>
+      <Pressable onPress={() => router.push("/login_screen")}>
+        <Text style={styles.link}>Already have an account? Login</Text>
+      </Pressable>
+
+      <Pressable onPress={() => router.replace("/(tabs)/home")}>
+        <Text style={styles.skipLink}>Skip for now</Text>
       </Pressable>
     </View>
   );
@@ -118,5 +129,12 @@ const styles = StyleSheet.create({
     color: "#2563eb",
     fontWeight: "700",
     marginTop: 18,
+  },
+
+  skipLink: {
+    textAlign: "center",
+    color: "#666666",
+    fontWeight: "700",
+    marginTop: 14,
   },
 });

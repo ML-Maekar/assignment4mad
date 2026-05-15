@@ -8,15 +8,10 @@ import { StatusBar } from 'expo-status-bar';
 import React from 'react';
 import 'react-native-reanimated';
 
-import FloatingHomeButton from '@/components/FloatingHomeButton';
 import {
   ThemeProvider as AppThemeProvider,
   useAppTheme,
 } from '@/contexts/AppThemeContext';
-
-export const unstable_settings = {
-  anchor: '(tabs)',
-};
 
 function RootLayoutContent() {
   const { activeTheme } = useAppTheme();
@@ -25,14 +20,11 @@ function RootLayoutContent() {
     <NavigationThemeProvider
       value={activeTheme === 'dark' ? DarkTheme : DefaultTheme}
     >
-      <Stack>
-        <Stack.Screen
-          name="(tabs)"
-          options={{
-            headerShown: false,
-          }}
-        />
-
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="index" />
+        <Stack.Screen name="register" />
+        <Stack.Screen name="login" />
+        <Stack.Screen name="(tabs)" />
         <Stack.Screen
           name="modal"
           options={{
@@ -41,8 +33,6 @@ function RootLayoutContent() {
           }}
         />
       </Stack>
-
-      <FloatingHomeButton />
 
       <StatusBar style={activeTheme === 'dark' ? 'light' : 'dark'} />
     </NavigationThemeProvider>
