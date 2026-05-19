@@ -2,11 +2,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, usePathname } from 'expo-router';
 import React from 'react';
 import {
-    Alert,
-    Pressable,
-    StyleSheet,
-    Text,
-    View,
+  Alert,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
 
 import { useAppTheme } from '@/contexts/AppThemeContext';
@@ -15,12 +15,14 @@ export default function FloatingHomeButton() {
   const pathname = usePathname();
   const { colors } = useAppTheme();
 
-  const isHomeScreen =
+  const shouldHideButton =
     pathname === '/' ||
     pathname === '/home' ||
-    pathname === '/(tabs)/home';
+    pathname === '/setting' ||
+    pathname === '/(tabs)/home' ||
+    pathname === '/(tabs)/setting';
 
-  if (isHomeScreen) {
+  if (shouldHideButton) {
     return null;
   }
 

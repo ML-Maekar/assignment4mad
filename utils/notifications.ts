@@ -1,20 +1,72 @@
-import * as Notifications from 'expo-notifications';
+import { Alert, Linking, LogBox, Platform } from 'react-native';
+
+LogBox.ignoreLogs([
+  'expo-notifications: Android Push notifications',
+  'Android Push notifications',
+]);
+
+function getNotificationsModule() {
+  return require('expo-notifications');
+}
 
 export async function getNotificationPermissionStatus() {
-  const permission = await Notifications.getPermissionsAsync();
-  return permission.status;
+  try {
+    const Notifications = getNotificationsModule();
+    const permission = await Notifications.getPermissionsAsync();
+
+    return permission.status;
+  } catch (error) {
+    console.log('Could not read notification permission:', error);
+    return 'undetermined';
+  }
 }
 
 export async function requestNotificationPermission() {
-  const existingPermission = await Notifications.getPermissionsAsync();
+  try {
+    const Notifications = getNotificationsModule();
 
-  if (existingPermission.status === 'granted') {
-    return true;
+    const existingPermission = await Notifications.getPermissionsAsync();
+
+    if (existingPermission.status === 'granted') {
+      return true;
+    }
+
+    const requestedPermission = await Notifications.requestPermissionsAsync();
+
+    if (requestedPermission.status === 'granted') {
+      return true;
+    }
+
+    Alert.alert(
+      'Notification Permission Needed',
+      'Notifications were not allowed. You can tap the notification switch again to ask, or enable notifications from phone settings if the system stops showing the permission popup.',
+      [
+        {
+          text: 'Not Now',
+          style: 'cancel',
+        },
+        {
+          text: 'Open Settings',
+          onPress: () => {
+            Linking.openSettings();
+          },
+        },
+      ]
+    );
+
+    return false;
+  } catch (error) {
+    console.log('Could not request notification permission:', error);
+
+    Alert.alert(
+      'Notification Error',
+      Platform.OS === 'android'
+        ? 'Notification permission could not be requested in this environment. Try again, or use a development build later for full push notification support.'
+        : 'Notification permission could not be requested.'
+    );
+
+    return false;
   }
-
-  const requestedPermission = await Notifications.requestPermissionsAsync();
-
-  return requestedPermission.status === 'granted';
 }
 
 export async function scheduleTestNotification() {
@@ -23,6 +75,8 @@ export async function scheduleTestNotification() {
   if (!hasPermission) {
     return false;
   }
+
+  const Notifications = getNotificationsModule();
 
   await Notifications.scheduleNotificationAsync({
     content: {
@@ -34,7 +88,6 @@ export async function scheduleTestNotification() {
       },
     },
     trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
       seconds: 5,
     },
   });
@@ -49,6 +102,8 @@ export async function scheduleChallengeReminder() {
     return false;
   }
 
+  const Notifications = getNotificationsModule();
+
   await Notifications.scheduleNotificationAsync({
     content: {
       title: 'STEMM Lab Challenge Reminder',
@@ -59,7 +114,6 @@ export async function scheduleChallengeReminder() {
       },
     },
     trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
       seconds: 15,
     },
   });
@@ -68,5 +122,10 @@ export async function scheduleChallengeReminder() {
 }
 
 export async function cancelAllScheduledNotifications() {
-  await Notifications.cancelAllScheduledNotificationsAsync();
+  try {
+    const Notifications = getNotificationsModule();
+    await Notifications.cancelAllScheduledNotificationsAsync();
+  } catch (error) {
+    console.log('Could not cancel notifications:', error);
+  }
 }
