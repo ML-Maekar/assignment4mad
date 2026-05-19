@@ -10,6 +10,7 @@ import 'react-native-reanimated';
 
 import FloatingHomeButton from '@/components/FloatingHomeButton';
 import GlobalBatteryStatus from '@/components/GlobalBatteryStatus';
+import NotificationSetup from '@/components/NotificationSetup';
 import {
   ThemeProvider as AppThemeProvider,
   useAppTheme,
@@ -26,6 +27,8 @@ function RootLayoutContent() {
     <NavigationThemeProvider
       value={activeTheme === 'dark' ? DarkTheme : DefaultTheme}
     >
+      <NotificationSetup />
+
       <Stack>
         <Stack.Screen
           name="(tabs)"

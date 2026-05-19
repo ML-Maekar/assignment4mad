@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -13,6 +13,13 @@ import {
   ThemePreference,
   useAppTheme,
 } from '@/contexts/AppThemeContext';
+import {
+  cancelAllScheduledNotifications,
+  getNotificationPermissionStatus,
+  requestNotificationPermission,
+  scheduleChallengeReminder,
+  scheduleTestNotification,
+} from '@/utils/notifications';
 
 type ThemeOption = {
   label: string;
@@ -74,7 +81,8 @@ const permissionOptions: PermissionOption[] = [
   {
     key: 'motion',
     title: 'Motion Sensors',
-    description: 'Used for accelerometer, gyroscope, vibration and movement activities.',
+    description:
+      'Used for accelerometer, gyroscope, vibration and movement activities.',
   },
   {
     key: 'notifications',
@@ -110,7 +118,7 @@ const initialPermissions: Record<PermissionKey, boolean> = {
   motion: false,
   notifications: false,
   media: false,
-  battery: false,
+  battery: true,
   backgroundTasks: false,
   ads: false,
 };
@@ -122,7 +130,90 @@ export default function SettingScreen() {
   const [permissions, setPermissions] =
     useState<Record<PermissionKey, boolean>>(initialPermissions);
 
+  useEffect(() => {
+    async function loadNotificationStatus() {
+      const status = await getNotificationPermissionStatus();
+
+      setPermissions((currentPermissions) => ({
+        ...currentPermissions,
+        notifications: status === 'granted',
+      }));
+    }
+
+    loadNotificationStatus();
+  }, []);
+
+  const updatePermission = (key: PermissionKey, value: boolean) => {
+    setPermissions((currentPermissions) => ({
+      ...currentPermissions,
+      [key]: value,
+    }));
+  };
+
+  const handleNotificationToggle = () => {
+    const isEnabled = permissions.notifications;
+
+    if (isEnabled) {
+      Alert.alert(
+        'Turn Off Notifications?',
+        'This will turn off notification reminders inside the app settings. To fully block notifications, you may also need to disable them in your phone settings.',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+          {
+            text: 'Turn Off',
+            style: 'destructive',
+            onPress: async () => {
+              await cancelAllScheduledNotifications();
+              updatePermission('notifications', false);
+            },
+          },
+        ]
+      );
+
+      return;
+    }
+
+    Alert.alert(
+      'Allow Notifications?',
+      'STEMM Lab would like to send challenge reminders, timer alerts and activity notifications.',
+      [
+        {
+          text: 'Not Now',
+          style: 'cancel',
+        },
+        {
+          text: 'Allow',
+          onPress: async () => {
+            const granted = await requestNotificationPermission();
+
+            if (granted) {
+              updatePermission('notifications', true);
+              Alert.alert(
+                'Notifications Enabled',
+                'STEMM Lab can now schedule local notifications.'
+              );
+            } else {
+              updatePermission('notifications', false);
+              Alert.alert(
+                'Permission Not Granted',
+                'Notifications were not enabled. You can allow them later from your phone settings.'
+              );
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handlePermissionToggle = (permission: PermissionOption) => {
+    if (permission.key === 'notifications') {
+      handleNotificationToggle();
+      return;
+    }
+
     const isEnabled = permissions[permission.key];
 
     if (isEnabled) {
@@ -138,10 +229,7 @@ export default function SettingScreen() {
             text: 'Turn Off',
             style: 'destructive',
             onPress: () => {
-              setPermissions((currentPermissions) => ({
-                ...currentPermissions,
-                [permission.key]: false,
-              }));
+              updatePermission(permission.key, false);
             },
           },
         ]
@@ -161,10 +249,67 @@ export default function SettingScreen() {
         {
           text: 'Allow',
           onPress: () => {
-            setPermissions((currentPermissions) => ({
-              ...currentPermissions,
-              [permission.key]: true,
-            }));
+            updatePermission(permission.key, true);
+          },
+        },
+      ]
+    );
+  };
+
+  const handleTestNotification = async () => {
+    const scheduled = await scheduleTestNotification();
+
+    if (scheduled) {
+      updatePermission('notifications', true);
+      Alert.alert(
+        'Test Scheduled',
+        'A test notification should appear in about 5 seconds.'
+      );
+    } else {
+      updatePermission('notifications', false);
+      Alert.alert(
+        'Notifications Disabled',
+        'Notification permission was not granted.'
+      );
+    }
+  };
+
+  const handleChallengeReminder = async () => {
+    const scheduled = await scheduleChallengeReminder();
+
+    if (scheduled) {
+      updatePermission('notifications', true);
+      Alert.alert(
+        'Reminder Scheduled',
+        'A STEMM Lab challenge reminder should appear in about 15 seconds.'
+      );
+    } else {
+      updatePermission('notifications', false);
+      Alert.alert(
+        'Notifications Disabled',
+        'Notification permission was not granted.'
+      );
+    }
+  };
+
+  const handleCancelNotifications = () => {
+    Alert.alert(
+      'Cancel Scheduled Notifications?',
+      'This will cancel all currently scheduled STEMM Lab notifications.',
+      [
+        {
+          text: 'Keep',
+          style: 'cancel',
+        },
+        {
+          text: 'Cancel All',
+          style: 'destructive',
+          onPress: async () => {
+            await cancelAllScheduledNotifications();
+            Alert.alert(
+              'Notifications Cancelled',
+              'All scheduled notifications have been cancelled.'
+            );
           },
         },
       ]
@@ -274,8 +419,8 @@ export default function SettingScreen() {
         </Text>
 
         <Text style={[styles.sectionDescription, { color: colors.subtitle }]}>
-          Turn planned app permissions on or off. Real device permission requests
-          will be connected during implementation.
+          Notifications now connect to the phone permission system. Other
+          switches are UI placeholders until their device packages are connected.
         </Text>
 
         <View style={styles.permissionContainer}>
@@ -345,22 +490,59 @@ export default function SettingScreen() {
 
       <View
         style={[
-          styles.infoCard,
+          styles.card,
           {
             backgroundColor: colors.card,
             borderColor: colors.border,
           },
         ]}
       >
-        <Text style={[styles.infoTitle, { color: colors.text }]}>
-          Permission note
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>
+          Notification Tools
         </Text>
 
-        <Text style={[styles.infoText, { color: colors.subtitle }]}>
-          These switches currently prepare the UI only. Later, each switch will
-          connect to the real phone permission system for camera, microphone,
-          location, motion sensors, notifications and storage.
+        <Text style={[styles.sectionDescription, { color: colors.subtitle }]}>
+          Use these buttons to test local notifications and challenge reminders.
         </Text>
+
+        <Pressable
+          onPress={handleTestNotification}
+          style={({ pressed }) => [
+            styles.actionButton,
+            { backgroundColor: colors.tint },
+            pressed && styles.optionPressed,
+          ]}
+        >
+          <Text style={[styles.actionButtonText, { color: colors.buttonText }]}>
+            Send Test Notification
+          </Text>
+        </Pressable>
+
+        <Pressable
+          onPress={handleChallengeReminder}
+          style={({ pressed }) => [
+            styles.actionButton,
+            { backgroundColor: colors.tint },
+            pressed && styles.optionPressed,
+          ]}
+        >
+          <Text style={[styles.actionButtonText, { color: colors.buttonText }]}>
+            Schedule Challenge Reminder
+          </Text>
+        </Pressable>
+
+        <Pressable
+          onPress={handleCancelNotifications}
+          style={({ pressed }) => [
+            styles.outlineButton,
+            { borderColor: colors.danger },
+            pressed && styles.optionPressed,
+          ]}
+        >
+          <Text style={[styles.outlineButtonText, { color: colors.danger }]}>
+            Cancel Scheduled Notifications
+          </Text>
+        </Pressable>
       </View>
     </ScrollView>
   );
@@ -373,7 +555,7 @@ const styles = StyleSheet.create({
   content: {
     padding: 20,
     paddingTop: 60,
-    paddingBottom: 40,
+    paddingBottom: 120,
   },
   header: {
     marginBottom: 24,
@@ -472,18 +654,27 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
-  infoCard: {
-    borderWidth: 1,
-    borderRadius: 22,
-    padding: 18,
+  actionButton: {
+    marginTop: 14,
+    minHeight: 54,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  infoTitle: {
-    fontSize: 18,
+  actionButtonText: {
+    fontSize: 16,
     fontWeight: '800',
   },
-  infoText: {
-    marginTop: 8,
-    fontSize: 14,
-    lineHeight: 20,
+  outlineButton: {
+    marginTop: 14,
+    minHeight: 54,
+    borderRadius: 18,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  outlineButtonText: {
+    fontSize: 16,
+    fontWeight: '800',
   },
 });
