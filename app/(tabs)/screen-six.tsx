@@ -19,6 +19,8 @@ export default function ScreenSix() {
         'Trace a moving shape on the screen later.',
         'Review accuracy and delay.',
       ]}
+      startButtonText="Start Reaction Challenge"
+      gameRoute="/activity-six-game"
     />
   );
 }

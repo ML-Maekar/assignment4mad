@@ -19,6 +19,8 @@ export default function ScreenFive() {
         'Review speed, smoothness and range-of-motion data.',
         'Upload results and reflect as a group.',
       ]}
+      startButtonText="Start Performance Lab"
+      gameRoute="/activity-five-game"
     />
   );
 }

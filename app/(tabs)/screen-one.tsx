@@ -24,6 +24,8 @@ export default function ScreenOne() {
         'Redesign and test up to three prototypes.',
         'Upload videos, results and team reflections later.',
       ]}
+      startButtonText="Start Parachute Challenge"
+      gameRoute="/activity-one-game"
     />
   );
 }
