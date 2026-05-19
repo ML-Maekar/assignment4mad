@@ -47,61 +47,13 @@ export default function TabLayout() {
         }}
       />
 
-      <Tabs.Screen
-        name="index"
-        options={{
-          href: null,
-        }}
-      />
-
-      <Tabs.Screen
-        name="screen-one"
-        options={{
-          href: null,
-        }}
-      />
-
-      <Tabs.Screen
-        name="screen-two"
-        options={{
-          href: null,
-        }}
-      />
-
-      <Tabs.Screen
-        name="screen-three"
-        options={{
-          href: null,
-        }}
-      />
-
-      <Tabs.Screen
-        name="screen-four"
-        options={{
-          href: null,
-        }}
-      />
-
-      <Tabs.Screen
-        name="screen-five"
-        options={{
-          href: null,
-        }}
-      />
-
-      <Tabs.Screen
-        name="screen-six"
-        options={{
-          href: null,
-        }}
-      />
-
-      <Tabs.Screen
-        name="screen-seven"
-        options={{
-          href: null,
-        }}
-      />
+      <Tabs.Screen name="screen-one" options={{ href: null }} />
+      <Tabs.Screen name="screen-two" options={{ href: null }} />
+      <Tabs.Screen name="screen-three" options={{ href: null }} />
+      <Tabs.Screen name="screen-four" options={{ href: null }} />
+      <Tabs.Screen name="screen-five" options={{ href: null }} />
+      <Tabs.Screen name="screen-six" options={{ href: null }} />
+      <Tabs.Screen name="screen-seven" options={{ href: null }} />
     </Tabs>
   );
 }
