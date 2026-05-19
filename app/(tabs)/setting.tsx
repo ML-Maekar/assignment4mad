@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 
+import SensorServicePanel from '@/components/SensorServicePanel';
 import {
   ThemePreference,
   useAppTheme,
@@ -97,7 +98,7 @@ const permissionOptions: PermissionOption[] = [
   {
     key: 'battery',
     title: 'Battery Status',
-    description: 'Used to show device battery information during activities.',
+    description: 'Used to show device battery information across the app.',
   },
   {
     key: 'backgroundTasks',
@@ -325,7 +326,7 @@ export default function SettingScreen() {
         <Text style={[styles.title, { color: colors.text }]}>Settings</Text>
 
         <Text style={[styles.subtitle, { color: colors.subtitle }]}>
-          Manage app appearance, permissions and future STEMM Lab features.
+          Manage app appearance, permissions, notifications and device sensors.
         </Text>
       </View>
 
@@ -488,6 +489,8 @@ export default function SettingScreen() {
         </View>
       </View>
 
+      <SensorServicePanel />
+
       <View
         style={[
           styles.card,
@@ -543,6 +546,26 @@ export default function SettingScreen() {
             Cancel Scheduled Notifications
           </Text>
         </Pressable>
+      </View>
+
+      <View
+        style={[
+          styles.infoCard,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+          },
+        ]}
+      >
+        <Text style={[styles.infoTitle, { color: colors.text }]}>
+          Development Note
+        </Text>
+
+        <Text style={[styles.infoText, { color: colors.subtitle }]}>
+          Sensor testing, notification testing, battery display and theme
+          controls are now part of the interface. Camera, microphone, GPS, media,
+          background tasks and ads will be connected later.
+        </Text>
       </View>
     </ScrollView>
   );
@@ -676,5 +699,20 @@ const styles = StyleSheet.create({
   outlineButtonText: {
     fontSize: 16,
     fontWeight: '800',
+  },
+  infoCard: {
+    borderWidth: 1,
+    borderRadius: 22,
+    padding: 18,
+    marginBottom: 18,
+  },
+  infoTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  infoText: {
+    marginTop: 8,
+    fontSize: 14,
+    lineHeight: 20,
   },
 });
