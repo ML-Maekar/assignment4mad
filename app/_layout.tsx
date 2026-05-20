@@ -27,14 +27,6 @@ function RootLayoutContent() {
     <NavigationThemeProvider
       value={activeTheme === 'dark' ? DarkTheme : DefaultTheme}
     >
-
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="index" />
-        <Stack.Screen name="register" />
-        <Stack.Screen name="login" />
-        <Stack.Screen name="team_setup" />
-        <Stack.Screen name="(tabs)" />
-
       <NotificationSetup />
 
       <Stack>
@@ -44,7 +36,6 @@ function RootLayoutContent() {
             headerShown: false,
           }}
         />
-
 
         <Stack.Screen
           name="modal"
