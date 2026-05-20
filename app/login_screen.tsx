@@ -24,7 +24,7 @@ export default function LoginScreen() {
     try {
       await loginUser(email.trim(), password);
 
-      router.replace("/(tabs)/home");
+      router.replace("/team_setup");
     } catch (error: any) {
       Alert.alert("Login failed", error.message);
     }
