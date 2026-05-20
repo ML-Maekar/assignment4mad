@@ -22,6 +22,8 @@ export default function ScreenThree() {
         'Repeat with cardboard instead of paper.',
         'Compare bend angle and material stiffness later.',
       ]}
+      startButtonText="Start Fan Challenge"
+      gameRoute="/activity-three-game"
     />
   );
 }

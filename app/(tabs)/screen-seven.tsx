@@ -19,6 +19,8 @@ export default function ScreenSeven() {
         'Compare breathing before and after exercise.',
         'Rotate through each team member.',
       ]}
+      startButtonText="Start Breathing Trainer"
+      gameRoute="/activity-seven-game"
     />
   );
 }

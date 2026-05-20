@@ -1,9 +1,6 @@
+import { router } from 'expo-router';
 import React from 'react';
-import {
-    StyleSheet,
-    Text,
-    View,
-} from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
@@ -15,6 +12,8 @@ type ActivityScreenTemplateProps = {
   overview: string;
   equipment: string[];
   instructions: string[];
+  startButtonText: string;
+  gameRoute: string;
 };
 
 export default function ActivityScreenTemplate({
@@ -24,6 +23,8 @@ export default function ActivityScreenTemplate({
   overview,
   equipment,
   instructions,
+  startButtonText,
+  gameRoute,
 }: ActivityScreenTemplateProps) {
   const { colors } = useAppTheme();
 
@@ -34,9 +35,7 @@ export default function ActivityScreenTemplate({
           Activity {activityNumber}
         </Text>
 
-        <Text style={[styles.title, { color: colors.text }]}>
-          {title}
-        </Text>
+        <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
 
         <Text style={[styles.category, { color: colors.subtitle }]}>
           {category}
@@ -75,10 +74,7 @@ export default function ActivityScreenTemplate({
         </Text>
 
         {equipment.map((item) => (
-          <Text
-            key={item}
-            style={[styles.listText, { color: colors.subtitle }]}
-          >
+          <Text key={item} style={[styles.listText, { color: colors.subtitle }]}>
             • {item}
           </Text>
         ))}
@@ -98,33 +94,26 @@ export default function ActivityScreenTemplate({
         </Text>
 
         {instructions.map((item, index) => (
-          <Text
-            key={item}
-            style={[styles.listText, { color: colors.subtitle }]}
-          >
+          <Text key={item} style={[styles.listText, { color: colors.subtitle }]}>
             {index + 1}. {item}
           </Text>
         ))}
       </View>
 
-      <View
-        style={[
-          styles.placeholderCard,
+      <Pressable
+        onPress={() => router.push(gameRoute as never)}
+        style={({ pressed }) => [
+          styles.startButton,
           {
-            backgroundColor: colors.card,
-            borderColor: colors.border,
+            backgroundColor: colors.tint,
           },
+          pressed && styles.startButtonPressed,
         ]}
       >
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>
-          Data Collection
+        <Text style={[styles.startButtonText, { color: colors.buttonText }]}>
+          {startButtonText}
         </Text>
-
-        <Text style={[styles.bodyText, { color: colors.subtitle }]}>
-          Inputs, timers, sensor readings, uploads and results will be added in
-          the implementation phase.
-        </Text>
-      </View>
+      </Pressable>
     </AppScreen>
   );
 }
@@ -154,12 +143,6 @@ const styles = StyleSheet.create({
     padding: 18,
     marginBottom: 16,
   },
-  placeholderCard: {
-    borderWidth: 1,
-    borderRadius: 22,
-    padding: 18,
-    marginBottom: 16,
-  },
   sectionTitle: {
     fontSize: 20,
     fontWeight: '800',
@@ -173,5 +156,21 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 23,
     marginBottom: 6,
+  },
+  startButton: {
+    minHeight: 58,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 6,
+    marginBottom: 30,
+  },
+  startButtonPressed: {
+    transform: [{ scale: 0.98 }],
+    opacity: 0.85,
+  },
+  startButtonText: {
+    fontSize: 17,
+    fontWeight: '800',
   },
 });

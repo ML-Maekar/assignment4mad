@@ -23,6 +23,8 @@ export default function ScreenFour() {
         'Modify the structure to reduce movement.',
         'Compare structure designs.',
       ]}
+      startButtonText="Start Earthquake Test"
+      gameRoute="/activity-four-game"
     />
   );
 }
