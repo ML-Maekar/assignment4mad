@@ -1,16 +1,18 @@
+import { router } from 'expo-router';
 import { Accelerometer } from 'expo-sensors';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    Alert,
-    Pressable,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  Alert,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 
 import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
+import { saveActivityResult } from '@/utils/activityResultsDb';
 
 type Result = {
   id: number;
@@ -34,6 +36,21 @@ export default function ActivityFourGame() {
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const subscriptionRef = useRef<{ remove: () => void } | null>(null);
+  const readingsRef = useRef<number[]>([]);
+  const resultsCountRef = useRef(0);
+  const designNameRef = useRef('');
+
+  useEffect(() => {
+    readingsRef.current = readings;
+  }, [readings]);
+
+  useEffect(() => {
+    resultsCountRef.current = results.length;
+  }, [results]);
+
+  useEffect(() => {
+    designNameRef.current = designName;
+  }, [designName]);
 
   const stopSensor = () => {
     subscriptionRef.current?.remove();
@@ -47,43 +64,80 @@ export default function ActivityFourGame() {
     }
   };
 
-  const finishTest = () => {
+  const finishTest = async () => {
     stopSensor();
     stopTimer();
     setIsRunning(false);
 
-    setReadings((currentReadings) => {
-      if (currentReadings.length === 0) {
-        return currentReadings;
-      }
+    const finalReadings = readingsRef.current;
 
-      const maxMovement = Math.max(...currentReadings);
-      const averageMovement =
-        currentReadings.reduce((total, value) => total + value, 0) /
-        currentReadings.length;
-
-      const stabilityScore = Math.max(
-        0,
-        Math.round(100 - averageMovement * 120)
+    if (finalReadings.length === 0) {
+      Alert.alert(
+        'No Movement Data',
+        'No sensor readings were collected. Please try the test again.'
       );
+      return;
+    }
 
-      const newResult: Result = {
-        id: Date.now(),
-        designName: designName.trim() || `Design ${results.length + 1}`,
-        maxMovement,
-        averageMovement,
-        stabilityScore,
-      };
+    const maxMovement = Math.max(...finalReadings);
+    const averageMovement =
+      finalReadings.reduce((total, value) => total + value, 0) /
+      finalReadings.length;
 
-      setResults((currentResults) => [newResult, ...currentResults]);
+    const stabilityScore = Math.max(
+      0,
+      Math.round(100 - averageMovement * 120)
+    );
+
+    const finalDesignName =
+      designNameRef.current.trim() || `Design ${resultsCountRef.current + 1}`;
+
+    const newResult: Result = {
+      id: Date.now(),
+      designName: finalDesignName,
+      maxMovement,
+      averageMovement,
+      stabilityScore,
+    };
+
+    setResults((currentResults) => [newResult, ...currentResults]);
+
+    try {
+      const savedResultId = await saveActivityResult({
+        activityKey: 'activity-four',
+        activityTitle: 'Earthquake-Resistant Structure',
+        label: finalDesignName,
+        score: stabilityScore,
+        data: {
+          maxMovement,
+          averageMovement,
+          testDurationSeconds: TEST_DURATION,
+          readingCount: finalReadings.length,
+        },
+      });
 
       Alert.alert(
         'Earthquake Test Complete',
-        `Stability score: ${stabilityScore}/100`
+        `Stability score: ${stabilityScore}/100`,
+        [
+          {
+            text: 'View Summary',
+            onPress: () => {
+              router.push(
+                `/result-summary?resultId=${savedResultId}` as never
+              );
+            },
+          },
+        ]
       );
+    } catch (error) {
+      console.log('Failed to save earthquake result:', error);
 
-      return currentReadings;
-    });
+      Alert.alert(
+        'Result Calculated',
+        `Stability score: ${stabilityScore}/100\n\nThe result was shown on this screen, but it could not be saved to the local database.`
+      );
+    }
   };
 
   const startTest = () => {
@@ -102,6 +156,7 @@ export default function ActivityFourGame() {
         {
           text: 'Start',
           onPress: () => {
+            readingsRef.current = [];
             setReadings([]);
             setCurrentMovement(0);
             setTimeLeft(TEST_DURATION);
@@ -117,10 +172,9 @@ export default function ActivityFourGame() {
               const movement = Math.abs(magnitude - 1);
 
               setCurrentMovement(movement);
-              setReadings((currentReadings) => [
-                ...currentReadings,
-                movement,
-              ]);
+
+              readingsRef.current = [...readingsRef.current, movement];
+              setReadings(readingsRef.current);
             });
 
             let remaining = TEST_DURATION;
@@ -142,7 +196,7 @@ export default function ActivityFourGame() {
   const resetResults = () => {
     Alert.alert(
       'Clear Results?',
-      'This will remove all earthquake test attempts from this screen.',
+      'This will remove the temporary earthquake test attempts from this screen. Saved SQLite leaderboard results will not be deleted here.',
       [
         {
           text: 'Cancel',
@@ -157,6 +211,10 @@ export default function ActivityFourGame() {
         },
       ]
     );
+  };
+
+  const openLeaderboard = () => {
+    router.push('/leaderboard?activityKey=activity-four' as never);
   };
 
   useEffect(() => {
@@ -238,6 +296,19 @@ export default function ActivityFourGame() {
             {isRunning ? 'Testing...' : 'Start 10 Second Test'}
           </Text>
         </Pressable>
+
+        <Pressable
+          onPress={openLeaderboard}
+          style={({ pressed }) => [
+            styles.secondaryButton,
+            { borderColor: colors.tint },
+            pressed && styles.buttonPressed,
+          ]}
+        >
+          <Text style={[styles.secondaryButtonText, { color: colors.tint }]}>
+            View Leaderboard
+          </Text>
+        </Pressable>
       </View>
 
       <View
@@ -247,7 +318,7 @@ export default function ActivityFourGame() {
         ]}
       >
         <Text style={[styles.cardTitle, { color: colors.text }]}>
-          Results
+          Temporary Results
         </Text>
 
         {results.length === 0 ? (
@@ -280,13 +351,13 @@ export default function ActivityFourGame() {
           <Pressable
             onPress={resetResults}
             style={({ pressed }) => [
-              styles.secondaryButton,
+              styles.clearButton,
               { borderColor: colors.danger },
               pressed && styles.buttonPressed,
             ]}
           >
             <Text style={[styles.secondaryButtonText, { color: colors.danger }]}>
-              Clear Results
+              Clear Temporary Results
             </Text>
           </Pressable>
         )}
@@ -296,12 +367,33 @@ export default function ActivityFourGame() {
 }
 
 const styles = StyleSheet.create({
-  header: { marginBottom: 24 },
-  title: { fontSize: 32, fontWeight: '900' },
-  subtitle: { marginTop: 8, fontSize: 16, lineHeight: 22 },
-  card: { borderWidth: 1, borderRadius: 22, padding: 18, marginBottom: 16 },
-  cardTitle: { fontSize: 20, fontWeight: '800', marginBottom: 12 },
-  body: { fontSize: 15, lineHeight: 22 },
+  header: {
+    marginBottom: 24,
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: '900',
+  },
+  subtitle: {
+    marginTop: 8,
+    fontSize: 16,
+    lineHeight: 22,
+  },
+  card: {
+    borderWidth: 1,
+    borderRadius: 22,
+    padding: 18,
+    marginBottom: 16,
+  },
+  cardTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    marginBottom: 12,
+  },
+  body: {
+    fontSize: 15,
+    lineHeight: 22,
+  },
   input: {
     borderWidth: 1,
     borderRadius: 14,
@@ -309,19 +401,38 @@ const styles = StyleSheet.create({
     fontSize: 15,
     marginBottom: 16,
   },
-  statsRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
-  statBox: { flex: 1 },
-  statLabel: { fontSize: 13, fontWeight: '700' },
-  statValue: { marginTop: 4, fontSize: 24, fontWeight: '900' },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+  },
+  statBox: {
+    flex: 1,
+  },
+  statLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  statValue: {
+    marginTop: 4,
+    fontSize: 24,
+    fontWeight: '900',
+  },
   button: {
     minHeight: 56,
     borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  buttonPressed: { transform: [{ scale: 0.98 }], opacity: 0.85 },
-  buttonText: { fontSize: 16, fontWeight: '800' },
   secondaryButton: {
+    marginTop: 12,
+    minHeight: 52,
+    borderRadius: 18,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  clearButton: {
     marginTop: 14,
     minHeight: 48,
     borderRadius: 16,
@@ -329,8 +440,31 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  secondaryButtonText: { fontSize: 15, fontWeight: '800' },
-  resultRow: { borderTopWidth: 1, paddingTop: 12, marginTop: 12 },
-  resultTitle: { fontSize: 16, fontWeight: '800', marginBottom: 4 },
-  score: { marginTop: 4, fontSize: 15, fontWeight: '900' },
+  buttonPressed: {
+    transform: [{ scale: 0.98 }],
+    opacity: 0.85,
+  },
+  buttonText: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  secondaryButtonText: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  resultRow: {
+    borderTopWidth: 1,
+    paddingTop: 12,
+    marginTop: 12,
+  },
+  resultTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  score: {
+    marginTop: 4,
+    fontSize: 15,
+    fontWeight: '900',
+  },
 });

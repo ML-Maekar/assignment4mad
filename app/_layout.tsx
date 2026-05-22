@@ -21,7 +21,7 @@ export const unstable_settings = {
 };
 
 function RootLayoutContent() {
-  const { activeTheme } = useAppTheme();
+  const { activeTheme, colors } = useAppTheme();
 
   return (
     <NavigationThemeProvider
@@ -29,11 +29,39 @@ function RootLayoutContent() {
     >
       <NotificationSetup />
 
-      <Stack>
+      <Stack
+        screenOptions={{
+          headerStyle: {
+            backgroundColor: colors.card,
+          },
+          headerTintColor: colors.text,
+          headerTitleStyle: {
+            fontWeight: '800',
+          },
+          headerShadowVisible: false,
+          contentStyle: {
+            backgroundColor: colors.background,
+          },
+        }}
+      >
         <Stack.Screen
           name="(tabs)"
           options={{
             headerShown: false,
+          }}
+        />
+
+        <Stack.Screen
+          name="result-summary"
+          options={{
+            title: 'Result Summary',
+          }}
+        />
+
+        <Stack.Screen
+          name="leaderboard"
+          options={{
+            title: 'Leaderboard',
           }}
         />
 
