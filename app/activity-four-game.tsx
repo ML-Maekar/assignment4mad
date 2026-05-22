@@ -13,6 +13,12 @@ import {
 import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
 import { saveActivityResult } from '@/utils/activityResultsDb';
+import {
+  deleteOfflineDraftByKey,
+  getOfflineDraftByKey,
+  parseOfflineDraftData,
+  saveOfflineDraft,
+} from '@/utils/offlineDraftsDb';
 
 type Result = {
   id: number;
@@ -22,7 +28,14 @@ type Result = {
   stabilityScore: number;
 };
 
+type ActivityFourDraftData = {
+  designName?: string;
+};
+
 const TEST_DURATION = 10;
+const ACTIVITY_KEY = 'activity-four';
+const ACTIVITY_TITLE = 'Earthquake-Resistant Structure';
+const DRAFT_KEY = 'activity-four-earthquake-draft';
 
 export default function ActivityFourGame() {
   const { colors } = useAppTheme();
@@ -33,12 +46,17 @@ export default function ActivityFourGame() {
   const [currentMovement, setCurrentMovement] = useState(0);
   const [readings, setReadings] = useState<number[]>([]);
   const [results, setResults] = useState<Result[]>([]);
+  const [draftStatus, setDraftStatus] = useState<'idle' | 'saved' | 'error'>(
+    'idle'
+  );
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const subscriptionRef = useRef<{ remove: () => void } | null>(null);
   const readingsRef = useRef<number[]>([]);
   const resultsCountRef = useRef(0);
   const designNameRef = useRef('');
+  const hasLoadedDraftRef = useRef(false);
 
   useEffect(() => {
     readingsRef.current = readings;
@@ -50,6 +68,71 @@ export default function ActivityFourGame() {
 
   useEffect(() => {
     designNameRef.current = designName;
+  }, [designName]);
+
+  useEffect(() => {
+    async function loadDraft() {
+      try {
+        const draft = await getOfflineDraftByKey(DRAFT_KEY);
+        const draftData = parseOfflineDraftData<ActivityFourDraftData>(draft);
+
+        if (draftData?.designName) {
+          setDesignName(draftData.designName);
+          designNameRef.current = draftData.designName;
+          setDraftStatus('saved');
+        }
+      } catch (error) {
+        console.log('Failed to load Activity 4 draft:', error);
+        setDraftStatus('error');
+      } finally {
+        hasLoadedDraftRef.current = true;
+      }
+    }
+
+    loadDraft();
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedDraftRef.current) {
+      return;
+    }
+
+    if (draftSaveTimerRef.current) {
+      clearTimeout(draftSaveTimerRef.current);
+    }
+
+    draftSaveTimerRef.current = setTimeout(async () => {
+      try {
+        const trimmedDesignName = designName.trim();
+
+        if (!trimmedDesignName) {
+          await deleteOfflineDraftByKey(DRAFT_KEY);
+          setDraftStatus('idle');
+          return;
+        }
+
+        await saveOfflineDraft({
+          draftKey: DRAFT_KEY,
+          activityKey: ACTIVITY_KEY,
+          activityTitle: ACTIVITY_TITLE,
+          draftTitle: trimmedDesignName,
+          data: {
+            designName: trimmedDesignName,
+          },
+        });
+
+        setDraftStatus('saved');
+      } catch (error) {
+        console.log('Failed to save Activity 4 draft:', error);
+        setDraftStatus('error');
+      }
+    }, 600);
+
+    return () => {
+      if (draftSaveTimerRef.current) {
+        clearTimeout(draftSaveTimerRef.current);
+      }
+    };
   }, [designName]);
 
   const stopSensor = () => {
@@ -104,8 +187,8 @@ export default function ActivityFourGame() {
 
     try {
       const savedResultId = await saveActivityResult({
-        activityKey: 'activity-four',
-        activityTitle: 'Earthquake-Resistant Structure',
+        activityKey: ACTIVITY_KEY,
+        activityTitle: ACTIVITY_TITLE,
         label: finalDesignName,
         score: stabilityScore,
         data: {
@@ -116,6 +199,9 @@ export default function ActivityFourGame() {
         },
       });
 
+      await deleteOfflineDraftByKey(DRAFT_KEY);
+      setDraftStatus('idle');
+
       Alert.alert(
         'Earthquake Test Complete',
         `Stability score: ${stabilityScore}/100`,
@@ -123,9 +209,7 @@ export default function ActivityFourGame() {
           {
             text: 'View Summary',
             onPress: () => {
-              router.push(
-                `/result-summary?resultId=${savedResultId}` as never
-              );
+              router.push(`/result-summary?resultId=${savedResultId}` as never);
             },
           },
         ]
@@ -213,6 +297,34 @@ export default function ActivityFourGame() {
     );
   };
 
+  const clearDraft = () => {
+    Alert.alert(
+      'Clear Draft?',
+      'This will remove the saved structure design draft for this activity.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteOfflineDraftByKey(DRAFT_KEY);
+              setDesignName('');
+              designNameRef.current = '';
+              setDraftStatus('idle');
+            } catch (error) {
+              console.log('Failed to clear Activity 4 draft:', error);
+              setDraftStatus('error');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const openLeaderboard = () => {
     router.push('/leaderboard?activityKey=activity-four' as never);
   };
@@ -221,6 +333,10 @@ export default function ActivityFourGame() {
     return () => {
       stopSensor();
       stopTimer();
+
+      if (draftSaveTimerRef.current) {
+        clearTimeout(draftSaveTimerRef.current);
+      }
     };
   }, []);
 
@@ -260,6 +376,36 @@ export default function ActivityFourGame() {
             },
           ]}
         />
+
+        <View style={styles.draftRow}>
+          <Text
+            style={[
+              styles.draftStatus,
+              {
+                color:
+                  draftStatus === 'error'
+                    ? colors.danger
+                    : draftStatus === 'saved'
+                      ? colors.success
+                      : colors.subtitle,
+              },
+            ]}
+          >
+            {draftStatus === 'saved'
+              ? 'Offline draft saved'
+              : draftStatus === 'error'
+                ? 'Draft save error'
+                : 'Draft saves automatically'}
+          </Text>
+
+          {designName.trim().length > 0 && (
+            <Pressable onPress={clearDraft}>
+              <Text style={[styles.clearDraftText, { color: colors.danger }]}>
+                Clear Draft
+              </Text>
+            </Pressable>
+          )}
+        </View>
 
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
@@ -399,7 +545,23 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 14,
     fontSize: 15,
+    marginBottom: 8,
+  },
+  draftRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
     marginBottom: 16,
+  },
+  draftStatus: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  clearDraftText: {
+    fontSize: 13,
+    fontWeight: '900',
   },
   statsRow: {
     flexDirection: 'row',

@@ -66,6 +66,13 @@ function RootLayoutContent() {
         />
 
         <Stack.Screen
+          name="result-history"
+          options={{
+            title: 'Result History',
+          }}
+        />
+
+        <Stack.Screen
           name="modal"
           options={{
             presentation: 'modal',
