@@ -1,14 +1,21 @@
+import { router } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    Alert,
-    Pressable,
-    StyleSheet,
-    Text,
-    View,
+  Alert,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
 
 import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
+import { saveActivityResult } from '@/utils/activityResultsDb';
+import {
+  getOfflineDraftByKey,
+  parseOfflineDraftData,
+  saveOfflineDraft,
+} from '@/utils/offlineDraftsDb';
 
 type Mode = 'Dominant Hand' | 'Non-Dominant Hand';
 
@@ -16,9 +23,23 @@ type Result = {
   id: number;
   mode: Mode;
   reactionTime: number;
+  score: number;
 };
 
 type GameState = 'idle' | 'waiting' | 'ready' | 'complete';
+
+type ActivitySixDraftData = {
+  mode?: Mode;
+};
+
+const ACTIVITY_KEY = 'activity-six';
+const ACTIVITY_TITLE = 'Reaction Board Challenge';
+const DRAFT_KEY = 'activity-six-reaction-draft';
+
+function calculateReactionScore(reactionTime: number) {
+  const score = Math.round(100 - Math.max(0, reactionTime - 200) * 0.08);
+  return Math.max(0, Math.min(100, score));
+}
 
 export default function ActivitySixGame() {
   const { colors } = useAppTheme();
@@ -27,9 +48,70 @@ export default function ActivitySixGame() {
   const [gameState, setGameState] = useState<GameState>('idle');
   const [message, setMessage] = useState('Press start when ready.');
   const [results, setResults] = useState<Result[]>([]);
+  const [draftStatus, setDraftStatus] = useState<'idle' | 'saved' | 'error'>(
+    'idle'
+  );
 
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const readyTimeRef = useRef<number | null>(null);
+  const modeRef = useRef<Mode>('Dominant Hand');
+  const hasLoadedDraftRef = useRef(false);
+
+  useEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
+
+  useEffect(() => {
+    async function loadDraft() {
+      try {
+        const draft = await getOfflineDraftByKey(DRAFT_KEY);
+        const draftData = parseOfflineDraftData<ActivitySixDraftData>(draft);
+
+        if (
+          draftData?.mode === 'Dominant Hand' ||
+          draftData?.mode === 'Non-Dominant Hand'
+        ) {
+          setMode(draftData.mode);
+          modeRef.current = draftData.mode;
+          setDraftStatus('saved');
+        }
+      } catch (error) {
+        console.log('Failed to load Activity 6 draft:', error);
+        setDraftStatus('error');
+      } finally {
+        hasLoadedDraftRef.current = true;
+      }
+    }
+
+    loadDraft();
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedDraftRef.current) {
+      return;
+    }
+
+    async function saveModeDraft() {
+      try {
+        await saveOfflineDraft({
+          draftKey: DRAFT_KEY,
+          activityKey: ACTIVITY_KEY,
+          activityTitle: ACTIVITY_TITLE,
+          draftTitle: mode,
+          data: {
+            mode,
+          },
+        });
+
+        setDraftStatus('saved');
+      } catch (error) {
+        console.log('Failed to save Activity 6 draft:', error);
+        setDraftStatus('error');
+      }
+    }
+
+    saveModeDraft();
+  }, [mode]);
 
   const clearGameTimer = () => {
     if (timeoutRef.current) {
@@ -53,7 +135,7 @@ export default function ActivitySixGame() {
     }, delay);
   };
 
-  const handleMainButtonPress = () => {
+  const handleMainButtonPress = async () => {
     if (gameState === 'idle' || gameState === 'complete') {
       startRound();
       return;
@@ -75,25 +157,67 @@ export default function ActivitySixGame() {
       }
 
       const reactionTime = Date.now() - readyTime;
+      const score = calculateReactionScore(reactionTime);
+      const selectedMode = modeRef.current;
+      const attemptLabel = `${selectedMode} - ${reactionTime} ms`;
 
       const newResult: Result = {
         id: Date.now(),
-        mode,
+        mode: selectedMode,
         reactionTime,
+        score,
       };
 
       setResults((currentResults) => [newResult, ...currentResults]);
       setGameState('complete');
       setMessage(`Reaction time: ${reactionTime} ms`);
 
-      Alert.alert('Round Complete', `Your reaction time was ${reactionTime} ms.`);
+      try {
+        const savedResultId = await saveActivityResult({
+          activityKey: ACTIVITY_KEY,
+          activityTitle: ACTIVITY_TITLE,
+          label: attemptLabel,
+          score,
+          data: {
+            mode: selectedMode,
+            reactionTimeMs: reactionTime,
+            reactionScore: score,
+          },
+        });
+
+        Alert.alert(
+          'Round Complete',
+          `Your reaction time was ${reactionTime} ms.\nScore: ${score}/100`,
+          [
+            {
+              text: 'View Summary',
+              onPress: () => {
+                router.push(
+                  `/result-summary?resultId=${savedResultId}` as never
+                );
+              },
+            },
+            {
+              text: 'Stay Here',
+              style: 'cancel',
+            },
+          ]
+        );
+      } catch (error) {
+        console.log('Failed to save reaction result:', error);
+
+        Alert.alert(
+          'Round Complete',
+          `Your reaction time was ${reactionTime} ms.\n\nThe result was shown on this screen, but it could not be saved to the local database.`
+        );
+      }
     }
   };
 
   const resetResults = () => {
     Alert.alert(
       'Clear Reaction Results?',
-      'This will remove all reaction attempts from this screen.',
+      'This will remove the temporary reaction attempts from this screen. Saved SQLite leaderboard results will not be deleted here.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -112,6 +236,10 @@ export default function ActivitySixGame() {
           results.reduce((total, result) => total + result.reactionTime, 0) /
             results.length
         );
+
+  const openLeaderboard = () => {
+    router.push('/leaderboard?activityKey=activity-six' as never);
+  };
 
   useEffect(() => {
     return () => {
@@ -155,6 +283,7 @@ export default function ActivitySixGame() {
         <View style={styles.modeRow}>
           <Pressable
             onPress={() => setMode('Dominant Hand')}
+            disabled={gameState === 'waiting' || gameState === 'ready'}
             style={[
               styles.modeButton,
               {
@@ -174,6 +303,7 @@ export default function ActivitySixGame() {
 
           <Pressable
             onPress={() => setMode('Non-Dominant Hand')}
+            disabled={gameState === 'waiting' || gameState === 'ready'}
             style={[
               styles.modeButton,
               {
@@ -191,6 +321,26 @@ export default function ActivitySixGame() {
             </Text>
           </Pressable>
         </View>
+
+        <Text
+          style={[
+            styles.draftStatus,
+            {
+              color:
+                draftStatus === 'error'
+                  ? colors.danger
+                  : draftStatus === 'saved'
+                    ? colors.success
+                    : colors.subtitle,
+            },
+          ]}
+        >
+          {draftStatus === 'saved'
+            ? 'Offline draft saved'
+            : draftStatus === 'error'
+              ? 'Draft save error'
+              : 'Mode saves automatically'}
+        </Text>
       </View>
 
       <View
@@ -225,6 +375,19 @@ export default function ActivitySixGame() {
             Average reaction time: {averageReaction} ms
           </Text>
         )}
+
+        <Pressable
+          onPress={openLeaderboard}
+          style={({ pressed }) => [
+            styles.leaderboardButton,
+            { borderColor: colors.tint },
+            pressed && styles.buttonPressed,
+          ]}
+        >
+          <Text style={[styles.secondaryButtonText, { color: colors.tint }]}>
+            View Leaderboard
+          </Text>
+        </Pressable>
       </View>
 
       <View
@@ -234,7 +397,7 @@ export default function ActivitySixGame() {
         ]}
       >
         <Text style={[styles.cardTitle, { color: colors.text }]}>
-          Results
+          Temporary Results
         </Text>
 
         {results.length === 0 ? (
@@ -256,6 +419,9 @@ export default function ActivitySixGame() {
               <Text style={[styles.score, { color: colors.success }]}>
                 Reaction: {result.reactionTime} ms
               </Text>
+              <Text style={[styles.body, { color: colors.subtitle }]}>
+                Score: {result.score}/100
+              </Text>
             </View>
           ))
         )}
@@ -270,7 +436,7 @@ export default function ActivitySixGame() {
             ]}
           >
             <Text style={[styles.secondaryButtonText, { color: colors.danger }]}>
-              Clear Results
+              Clear Temporary Results
             </Text>
           </Pressable>
         )}
@@ -302,6 +468,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modeText: { fontSize: 15, fontWeight: '800' },
+  draftStatus: {
+    marginTop: 12,
+    fontSize: 13,
+    fontWeight: '700',
+  },
   message: {
     fontSize: 22,
     fontWeight: '900',
@@ -317,6 +488,15 @@ const styles = StyleSheet.create({
   },
   reactionButtonText: { fontSize: 28, fontWeight: '900' },
   averageText: { marginTop: 18, fontSize: 15, fontWeight: '700' },
+  leaderboardButton: {
+    marginTop: 18,
+    minHeight: 48,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   buttonPressed: { transform: [{ scale: 0.98 }], opacity: 0.85 },
   resultRow: { borderTopWidth: 1, paddingTop: 12, marginTop: 12 },
   resultTitle: { fontSize: 16, fontWeight: '800', marginBottom: 4 },

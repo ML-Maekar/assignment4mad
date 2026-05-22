@@ -1,15 +1,22 @@
+import { router } from 'expo-router';
 import { Accelerometer } from 'expo-sensors';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    Alert,
-    Pressable,
-    StyleSheet,
-    Text,
-    View,
+  Alert,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
 
 import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
+import { saveActivityResult } from '@/utils/activityResultsDb';
+import {
+  getOfflineDraftByKey,
+  parseOfflineDraftData,
+  saveOfflineDraft,
+} from '@/utils/offlineDraftsDb';
 
 type BreathingMode = 'At Rest' | 'After Exercise 1' | 'After Exercise 2';
 
@@ -18,11 +25,40 @@ type Result = {
   mode: BreathingMode;
   breaths: number;
   breathsPerMinute: number;
+  score: number;
+};
+
+type ActivitySevenDraftData = {
+  mode?: BreathingMode;
 };
 
 const TEST_DURATION = 30;
 const PEAK_THRESHOLD = 0.035;
 const MIN_PEAK_GAP_MS = 1500;
+
+const ACTIVITY_KEY = 'activity-seven';
+const ACTIVITY_TITLE = 'Breathing Pace Trainer';
+const DRAFT_KEY = 'activity-seven-breathing-draft';
+
+function getBreathingTarget(mode: BreathingMode) {
+  if (mode === 'At Rest') {
+    return 12;
+  }
+
+  if (mode === 'After Exercise 1') {
+    return 22;
+  }
+
+  return 28;
+}
+
+function calculateBreathingScore(mode: BreathingMode, breathsPerMinute: number) {
+  const target = getBreathingTarget(mode);
+  const difference = Math.abs(breathsPerMinute - target);
+  const score = Math.round(100 - difference * 5);
+
+  return Math.max(0, Math.min(100, score));
+}
 
 export default function ActivitySevenGame() {
   const { colors } = useAppTheme();
@@ -33,11 +69,78 @@ export default function ActivitySevenGame() {
   const [breaths, setBreaths] = useState(0);
   const [currentMotion, setCurrentMotion] = useState(0);
   const [results, setResults] = useState<Result[]>([]);
+  const [draftStatus, setDraftStatus] = useState<'idle' | 'saved' | 'error'>(
+    'idle'
+  );
 
   const subscriptionRef = useRef<{ remove: () => void } | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const previousValueRef = useRef(0);
   const lastPeakTimeRef = useRef(0);
+  const breathsRef = useRef(0);
+  const modeRef = useRef<BreathingMode>('At Rest');
+  const hasLoadedDraftRef = useRef(false);
+
+  useEffect(() => {
+    breathsRef.current = breaths;
+  }, [breaths]);
+
+  useEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
+
+  useEffect(() => {
+    async function loadDraft() {
+      try {
+        const draft = await getOfflineDraftByKey(DRAFT_KEY);
+        const draftData = parseOfflineDraftData<ActivitySevenDraftData>(draft);
+
+        if (
+          draftData?.mode === 'At Rest' ||
+          draftData?.mode === 'After Exercise 1' ||
+          draftData?.mode === 'After Exercise 2'
+        ) {
+          setMode(draftData.mode);
+          modeRef.current = draftData.mode;
+          setDraftStatus('saved');
+        }
+      } catch (error) {
+        console.log('Failed to load Activity 7 draft:', error);
+        setDraftStatus('error');
+      } finally {
+        hasLoadedDraftRef.current = true;
+      }
+    }
+
+    loadDraft();
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedDraftRef.current) {
+      return;
+    }
+
+    async function saveModeDraft() {
+      try {
+        await saveOfflineDraft({
+          draftKey: DRAFT_KEY,
+          activityKey: ACTIVITY_KEY,
+          activityTitle: ACTIVITY_TITLE,
+          draftTitle: mode,
+          data: {
+            mode,
+          },
+        });
+
+        setDraftStatus('saved');
+      } catch (error) {
+        console.log('Failed to save Activity 7 draft:', error);
+        setDraftStatus('error');
+      }
+    }
+
+    saveModeDraft();
+  }, [mode]);
 
   const stopSensor = () => {
     subscriptionRef.current?.remove();
@@ -51,32 +154,70 @@ export default function ActivitySevenGame() {
     }
   };
 
-  const finishTest = () => {
+  const finishTest = async () => {
     stopSensor();
     stopTimer();
     setIsRunning(false);
 
-    setBreaths((currentBreaths) => {
-      const breathsPerMinute = Math.round(
-        currentBreaths * (60 / TEST_DURATION)
-      );
+    const finalBreaths = breathsRef.current;
+    const selectedMode = modeRef.current;
 
-      const newResult: Result = {
-        id: Date.now(),
-        mode,
-        breaths: currentBreaths,
-        breathsPerMinute,
-      };
+    const breathsPerMinute = Math.round(finalBreaths * (60 / TEST_DURATION));
+    const breathingScore = calculateBreathingScore(
+      selectedMode,
+      breathsPerMinute
+    );
 
-      setResults((currentResults) => [newResult, ...currentResults]);
+    const newResult: Result = {
+      id: Date.now(),
+      mode: selectedMode,
+      breaths: finalBreaths,
+      breathsPerMinute,
+      score: breathingScore,
+    };
+
+    setResults((currentResults) => [newResult, ...currentResults]);
+
+    try {
+      const savedResultId = await saveActivityResult({
+        activityKey: ACTIVITY_KEY,
+        activityTitle: ACTIVITY_TITLE,
+        label: selectedMode,
+        score: breathingScore,
+        data: {
+          mode: selectedMode,
+          breaths: finalBreaths,
+          breathsPerMinute,
+          targetBreathsPerMinute: getBreathingTarget(selectedMode),
+          breathingScore,
+          testDurationSeconds: TEST_DURATION,
+        },
+      });
 
       Alert.alert(
         'Breathing Test Complete',
-        `${mode}: ${breathsPerMinute} breaths per minute`
+        `${selectedMode}: ${breathsPerMinute} breaths per minute\nScore: ${breathingScore}/100`,
+        [
+          {
+            text: 'View Summary',
+            onPress: () => {
+              router.push(`/result-summary?resultId=${savedResultId}` as never);
+            },
+          },
+          {
+            text: 'Stay Here',
+            style: 'cancel',
+          },
+        ]
       );
+    } catch (error) {
+      console.log('Failed to save breathing result:', error);
 
-      return currentBreaths;
-    });
+      Alert.alert(
+        'Breathing Test Complete',
+        `${selectedMode}: ${breathsPerMinute} breaths per minute\n\nThe result was shown on this screen, but it could not be saved to the local database.`
+      );
+    }
   };
 
   const startTest = () => {
@@ -99,6 +240,8 @@ export default function ActivitySevenGame() {
             setTimeLeft(TEST_DURATION);
             setBreaths(0);
             setCurrentMotion(0);
+
+            breathsRef.current = 0;
             previousValueRef.current = 0;
             lastPeakTimeRef.current = 0;
 
@@ -124,7 +267,10 @@ export default function ActivitySevenGame() {
 
               if (crossedPeak && enoughTimePassed) {
                 lastPeakTimeRef.current = now;
-                setBreaths((currentBreaths) => currentBreaths + 1);
+
+                const updatedBreaths = breathsRef.current + 1;
+                breathsRef.current = updatedBreaths;
+                setBreaths(updatedBreaths);
               }
 
               previousValueRef.current = breathingMotion;
@@ -149,7 +295,7 @@ export default function ActivitySevenGame() {
   const resetResults = () => {
     Alert.alert(
       'Clear Breathing Results?',
-      'This will remove all breathing attempts from this screen.',
+      'This will remove the temporary breathing attempts from this screen. Saved SQLite leaderboard results will not be deleted here.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -159,6 +305,10 @@ export default function ActivitySevenGame() {
         },
       ]
     );
+  };
+
+  const openLeaderboard = () => {
+    router.push('/leaderboard?activityKey=activity-seven' as never);
   };
 
   useEffect(() => {
@@ -190,28 +340,52 @@ export default function ActivitySevenGame() {
         </Text>
 
         <View style={styles.modeColumn}>
-          {(['At Rest', 'After Exercise 1', 'After Exercise 2'] as BreathingMode[]).map(
-            (option) => (
-              <Pressable
-                key={option}
-                onPress={() => setMode(option)}
-                disabled={isRunning}
-                style={[
-                  styles.modeButton,
-                  {
-                    borderColor: mode === option ? colors.tint : colors.border,
-                    backgroundColor:
-                      mode === option ? `${colors.tint}20` : colors.background,
-                  },
-                ]}
-              >
-                <Text style={[styles.modeText, { color: colors.text }]}>
-                  {option}
-                </Text>
-              </Pressable>
-            )
-          )}
+          {(
+            [
+              'At Rest',
+              'After Exercise 1',
+              'After Exercise 2',
+            ] as BreathingMode[]
+          ).map((option) => (
+            <Pressable
+              key={option}
+              onPress={() => setMode(option)}
+              disabled={isRunning}
+              style={[
+                styles.modeButton,
+                {
+                  borderColor: mode === option ? colors.tint : colors.border,
+                  backgroundColor:
+                    mode === option ? `${colors.tint}20` : colors.background,
+                },
+              ]}
+            >
+              <Text style={[styles.modeText, { color: colors.text }]}>
+                {option}
+              </Text>
+            </Pressable>
+          ))}
         </View>
+
+        <Text
+          style={[
+            styles.draftStatus,
+            {
+              color:
+                draftStatus === 'error'
+                  ? colors.danger
+                  : draftStatus === 'saved'
+                    ? colors.success
+                    : colors.subtitle,
+            },
+          ]}
+        >
+          {draftStatus === 'saved'
+            ? 'Offline draft saved'
+            : draftStatus === 'error'
+              ? 'Draft save error'
+              : 'Mode saves automatically'}
+        </Text>
       </View>
 
       <View
@@ -261,6 +435,19 @@ export default function ActivitySevenGame() {
             {isRunning ? 'Measuring...' : 'Start 30 Second Test'}
           </Text>
         </Pressable>
+
+        <Pressable
+          onPress={openLeaderboard}
+          style={({ pressed }) => [
+            styles.secondaryButton,
+            { borderColor: colors.tint },
+            pressed && styles.buttonPressed,
+          ]}
+        >
+          <Text style={[styles.secondaryButtonText, { color: colors.tint }]}>
+            View Leaderboard
+          </Text>
+        </Pressable>
       </View>
 
       <View
@@ -270,7 +457,7 @@ export default function ActivitySevenGame() {
         ]}
       >
         <Text style={[styles.cardTitle, { color: colors.text }]}>
-          Results
+          Temporary Results
         </Text>
 
         {results.length === 0 ? (
@@ -292,6 +479,9 @@ export default function ActivitySevenGame() {
               <Text style={[styles.score, { color: colors.success }]}>
                 {result.breathsPerMinute} breaths/min
               </Text>
+              <Text style={[styles.body, { color: colors.subtitle }]}>
+                Score: {result.score}/100
+              </Text>
             </View>
           ))
         )}
@@ -300,13 +490,13 @@ export default function ActivitySevenGame() {
           <Pressable
             onPress={resetResults}
             style={({ pressed }) => [
-              styles.secondaryButton,
+              styles.clearButton,
               { borderColor: colors.danger },
               pressed && styles.buttonPressed,
             ]}
           >
             <Text style={[styles.secondaryButtonText, { color: colors.danger }]}>
-              Clear Results
+              Clear Temporary Results
             </Text>
           </Pressable>
         )}
@@ -330,6 +520,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modeText: { fontSize: 15, fontWeight: '800' },
+  draftStatus: {
+    marginTop: 12,
+    fontSize: 13,
+    fontWeight: '700',
+  },
   statsRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
   statBox: { flex: 1 },
   statLabel: { fontSize: 13, fontWeight: '700' },
@@ -347,6 +542,14 @@ const styles = StyleSheet.create({
   resultTitle: { fontSize: 16, fontWeight: '800', marginBottom: 4 },
   score: { marginTop: 4, fontSize: 15, fontWeight: '900' },
   secondaryButton: {
+    marginTop: 12,
+    minHeight: 52,
+    borderRadius: 18,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  clearButton: {
     marginTop: 14,
     minHeight: 48,
     borderRadius: 16,

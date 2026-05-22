@@ -1,5 +1,5 @@
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -13,7 +13,7 @@ import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
 import {
     ActivityResultRecord,
-    clearActivityResultsByActivity,
+    deleteActivityResult,
     getActivityResultsByActivity,
     getAllActivityResults,
 } from '@/utils/activityResultsDb';
@@ -34,14 +34,14 @@ const ACTIVITY_FILTERS: ActivityFilter[] = [
   { label: 'Activity 7', key: 'activity-seven' },
 ];
 
-function formatDate(value: string) {
+function formatDateTime(value: string) {
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
     return value;
   }
 
-  return date.toLocaleDateString();
+  return date.toLocaleString();
 }
 
 function getFilterLabel(activityKey: string | null) {
@@ -51,7 +51,7 @@ function getFilterLabel(activityKey: string | null) {
   );
 }
 
-export default function LeaderboardScreen() {
+export default function ResultHistoryScreen() {
   const { colors } = useAppTheme();
   const params = useLocalSearchParams();
 
@@ -65,20 +65,6 @@ export default function LeaderboardScreen() {
   const [results, setResults] = useState<ActivityResultRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const title = useMemo(() => {
-    const filterLabel = getFilterLabel(selectedActivityKey);
-
-    if (selectedActivityKey && results.length > 0) {
-      return `${results[0].activityTitle} Leaderboard`;
-    }
-
-    if (selectedActivityKey) {
-      return `${filterLabel} Leaderboard`;
-    }
-
-    return 'All Activities Leaderboard';
-  }, [selectedActivityKey, results]);
-
   const loadResults = useCallback(async () => {
     try {
       setLoading(true);
@@ -86,14 +72,17 @@ export default function LeaderboardScreen() {
       if (selectedActivityKey) {
         const activityResults =
           await getActivityResultsByActivity(selectedActivityKey);
-        setResults(activityResults);
-      } else {
-        const allResults = await getAllActivityResults();
-        const sortedResults = [...allResults].sort((a, b) => b.score - a.score);
+        const sortedResults = [...activityResults].sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
         setResults(sortedResults);
+      } else {
+        const savedResults = await getAllActivityResults();
+        setResults(savedResults);
       }
     } catch (error) {
-      console.log('Failed to load leaderboard:', error);
+      console.log('Failed to load result history:', error);
       setResults([]);
     } finally {
       setLoading(false);
@@ -110,29 +99,37 @@ export default function LeaderboardScreen() {
     setSelectedActivityKey(activityKey);
   };
 
-  const clearResults = () => {
-    if (!selectedActivityKey) {
-      Alert.alert(
-        'Clear unavailable',
-        'Choose a specific activity before clearing results.'
-      );
-      return;
-    }
+  const openResultSummary = (resultId: number) => {
+    router.push(`/result-summary?resultId=${resultId}` as never);
+  };
 
+  const openLeaderboard = (activityKey: string) => {
+    router.push(`/leaderboard?activityKey=${activityKey}` as never);
+  };
+
+  const deleteResult = (result: ActivityResultRecord) => {
     Alert.alert(
-      'Clear Leaderboard?',
-      'This will delete saved results for this activity from this device.',
+      'Delete Result?',
+      `This will delete "${result.label}" from your saved history.`,
       [
         {
           text: 'Cancel',
           style: 'cancel',
         },
         {
-          text: 'Clear',
+          text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            await clearActivityResultsByActivity(selectedActivityKey);
-            await loadResults();
+            try {
+              await deleteActivityResult(result.id);
+              await loadResults();
+            } catch (error) {
+              console.log('Failed to delete result:', error);
+              Alert.alert(
+                'Delete Failed',
+                'The result could not be deleted. Please try again.'
+              );
+            }
           },
         },
       ]
@@ -144,7 +141,7 @@ export default function LeaderboardScreen() {
       <AppScreen scroll={false} contentStyle={styles.centerContent}>
         <ActivityIndicator size="large" color={colors.tint} />
         <Text style={[styles.loadingText, { color: colors.subtitle }]}>
-          Loading leaderboard...
+          Loading result history...
         </Text>
       </AppScreen>
     );
@@ -153,9 +150,11 @@ export default function LeaderboardScreen() {
   return (
     <AppScreen>
       <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
+        <Text style={[styles.title, { color: colors.text }]}>
+          Result History
+        </Text>
         <Text style={[styles.subtitle, { color: colors.subtitle }]}>
-          Scores are saved locally using SQLite and ranked by highest score.
+          View saved attempts from newest to oldest.
         </Text>
       </View>
 
@@ -217,16 +216,16 @@ export default function LeaderboardScreen() {
         ]}
       >
         <Text style={[styles.cardTitle, { color: colors.text }]}>
-          Rankings
+          {getFilterLabel(selectedActivityKey)} Attempts
         </Text>
 
         {results.length === 0 ? (
           <Text style={[styles.emptyText, { color: colors.subtitle }]}>
             No saved results yet for {getFilterLabel(selectedActivityKey)}.
-            Complete an activity to appear on the leaderboard.
+            Complete an activity to save your first attempt.
           </Text>
         ) : (
-          results.map((result, index) => (
+          results.map((result) => (
             <View
               key={result.id}
               style={[
@@ -236,47 +235,86 @@ export default function LeaderboardScreen() {
                 },
               ]}
             >
-              <View
-                style={[
-                  styles.rankBadge,
-                  {
-                    backgroundColor:
-                      index === 0 ? colors.success : colors.background,
-                    borderColor: colors.border,
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.rankText,
-                    {
-                      color: index === 0 ? colors.buttonText : colors.text,
-                    },
-                  ]}
-                >
-                  #{index + 1}
-                </Text>
-              </View>
+              <View style={styles.resultTopRow}>
+                <View style={styles.resultTextArea}>
+                  <Text style={[styles.resultTitle, { color: colors.text }]}>
+                    {result.label}
+                  </Text>
 
-              <View style={styles.resultInfo}>
-                <Text style={[styles.resultTitle, { color: colors.text }]}>
-                  {result.label}
-                </Text>
-
-                {!selectedActivityKey && (
                   <Text style={[styles.resultMeta, { color: colors.subtitle }]}>
                     {result.activityTitle}
                   </Text>
-                )}
 
-                <Text style={[styles.resultMeta, { color: colors.subtitle }]}>
-                  Saved: {formatDate(result.createdAt)}
-                </Text>
+                  <Text style={[styles.resultMeta, { color: colors.subtitle }]}>
+                    Saved: {formatDateTime(result.createdAt)}
+                  </Text>
+                </View>
+
+                <View
+                  style={[
+                    styles.scoreBadge,
+                    {
+                      backgroundColor: colors.background,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.scoreText, { color: colors.success }]}>
+                    {Math.round(result.score)}
+                  </Text>
+                  <Text style={[styles.scoreLabel, { color: colors.subtitle }]}>
+                    score
+                  </Text>
+                </View>
               </View>
 
-              <Text style={[styles.score, { color: colors.success }]}>
-                {Math.round(result.score)}
-              </Text>
+              <View style={styles.actionRow}>
+                <Pressable
+                  onPress={() => openResultSummary(result.id)}
+                  style={({ pressed }) => [
+                    styles.smallButton,
+                    { backgroundColor: colors.tint },
+                    pressed && styles.buttonPressed,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.smallButtonText,
+                      { color: colors.buttonText },
+                    ]}
+                  >
+                    Summary
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => openLeaderboard(result.activityKey)}
+                  style={({ pressed }) => [
+                    styles.smallOutlineButton,
+                    { borderColor: colors.tint },
+                    pressed && styles.buttonPressed,
+                  ]}
+                >
+                  <Text style={[styles.smallButtonText, { color: colors.tint }]}>
+                    Leaderboard
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => deleteResult(result)}
+                  style={({ pressed }) => [
+                    styles.smallOutlineButton,
+                    { borderColor: colors.danger },
+                    pressed && styles.buttonPressed,
+                  ]}
+                >
+                  <Text
+                    style={[styles.smallButtonText, { color: colors.danger }]}
+                  >
+                    Delete
+                  </Text>
+                </Pressable>
+              </View>
             </View>
           ))
         )}
@@ -284,7 +322,7 @@ export default function LeaderboardScreen() {
 
       <View style={styles.buttonGroup}>
         <Pressable
-          onPress={() => router.push('/result-history' as never)}
+          onPress={() => router.push('/leaderboard' as never)}
           style={({ pressed }) => [
             styles.button,
             { backgroundColor: colors.tint },
@@ -292,12 +330,12 @@ export default function LeaderboardScreen() {
           ]}
         >
           <Text style={[styles.buttonText, { color: colors.buttonText }]}>
-            View Result History
+            View Leaderboard
           </Text>
         </Pressable>
 
         <Pressable
-          onPress={() => router.back()}
+          onPress={loadResults}
           style={({ pressed }) => [
             styles.secondaryButton,
             { borderColor: colors.tint },
@@ -305,24 +343,9 @@ export default function LeaderboardScreen() {
           ]}
         >
           <Text style={[styles.secondaryButtonText, { color: colors.tint }]}>
-            Back
+            Refresh History
           </Text>
         </Pressable>
-
-        {selectedActivityKey && results.length > 0 && (
-          <Pressable
-            onPress={clearResults}
-            style={({ pressed }) => [
-              styles.secondaryButton,
-              { borderColor: colors.danger },
-              pressed && styles.buttonPressed,
-            ]}
-          >
-            <Text style={[styles.secondaryButtonText, { color: colors.danger }]}>
-              Clear Activity Results
-            </Text>
-          </Pressable>
-        )}
 
         <Pressable
           onPress={() => router.replace('/(tabs)/home' as never)}
@@ -356,7 +379,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   title: {
-    fontSize: 30,
+    fontSize: 32,
     fontWeight: '900',
   },
   subtitle: {
@@ -401,39 +424,69 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   resultRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
     borderTopWidth: 1,
     paddingTop: 14,
     marginTop: 14,
+  },
+  resultTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
   },
-  rankBadge: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  rankText: {
-    fontSize: 14,
-    fontWeight: '900',
-  },
-  resultInfo: {
+  resultTextArea: {
     flex: 1,
   },
   resultTitle: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '900',
   },
   resultMeta: {
-    marginTop: 3,
+    marginTop: 4,
     fontSize: 13,
     fontWeight: '600',
   },
-  score: {
+  scoreBadge: {
+    width: 74,
+    minHeight: 64,
+    borderRadius: 18,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 8,
+  },
+  scoreText: {
     fontSize: 24,
+    fontWeight: '900',
+  },
+  scoreLabel: {
+    marginTop: 2,
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+    flexWrap: 'wrap',
+  },
+  smallButton: {
+    minHeight: 40,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  smallOutlineButton: {
+    minHeight: 40,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  smallButtonText: {
+    fontSize: 13,
     fontWeight: '900',
   },
   buttonGroup: {

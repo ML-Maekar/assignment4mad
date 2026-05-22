@@ -95,6 +95,76 @@ export default function HomeScreen() {
           </Pressable>
         ))}
       </View>
+
+      <View style={styles.resultsSection}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>
+          Results
+        </Text>
+
+        <Text style={[styles.sectionSubtitle, { color: colors.subtitle }]}>
+          View saved activity attempts and compare scores across activities.
+        </Text>
+
+        <Pressable
+          onPress={() => router.push('/result-history' as never)}
+          style={({ pressed }) => [
+            styles.resultButton,
+            {
+              backgroundColor: colors.tint,
+              borderColor: colors.tint,
+            },
+            pressed && styles.tabPressed,
+          ]}
+        >
+          <View style={styles.resultButtonTextContainer}>
+            <Text style={[styles.resultButtonTitle, { color: colors.buttonText }]}>
+              Result History
+            </Text>
+
+            <Text
+              style={[
+                styles.resultButtonDescription,
+                { color: colors.buttonText },
+              ]}
+            >
+              View all saved attempts from newest to oldest
+            </Text>
+          </View>
+
+          <Text style={[styles.resultArrow, { color: colors.buttonText }]}>
+            ›
+          </Text>
+        </Pressable>
+
+        <Pressable
+          onPress={() => router.push('/leaderboard' as never)}
+          style={({ pressed }) => [
+            styles.resultOutlineButton,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.tint,
+            },
+            pressed && styles.tabPressed,
+          ]}
+        >
+          <View style={styles.resultButtonTextContainer}>
+            <Text style={[styles.resultButtonTitle, { color: colors.tint }]}>
+              Leaderboard
+            </Text>
+
+            <Text
+              style={[
+                styles.resultButtonDescription,
+                { color: colors.subtitle },
+              ]}
+            >
+              Rank results by highest score across all activities
+            </Text>
+          </View>
+
+          <Text style={[styles.resultArrow, { color: colors.tint }]}>›</Text>
+        </Pressable>
+      </View>
     </AppScreen>
   );
 }
@@ -160,6 +230,69 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   arrow: {
+    fontSize: 34,
+    marginLeft: 12,
+  },
+  resultsSection: {
+    marginTop: 30,
+    gap: 14,
+  },
+  sectionTitle: {
+    fontSize: 24,
+    fontWeight: '900',
+  },
+  sectionSubtitle: {
+    marginTop: -6,
+    fontSize: 15,
+    lineHeight: 21,
+  },
+  resultButton: {
+    minHeight: 82,
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: {
+      width: 0,
+      height: 6,
+    },
+    elevation: 4,
+  },
+  resultOutlineButton: {
+    minHeight: 82,
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: {
+      width: 0,
+      height: 6,
+    },
+    elevation: 4,
+  },
+  resultButtonTextContainer: {
+    flex: 1,
+  },
+  resultButtonTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+  },
+  resultButtonDescription: {
+    marginTop: 4,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  resultArrow: {
     fontSize: 34,
     marginLeft: 12,
   },

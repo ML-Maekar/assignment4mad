@@ -1,15 +1,17 @@
+import { router } from 'expo-router';
 import { Accelerometer } from 'expo-sensors';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    Alert,
-    Pressable,
-    StyleSheet,
-    Text,
-    View,
+  Alert,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
 
 import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
+import { saveActivityResult } from '@/utils/activityResultsDb';
 
 type Result = {
   id: number;
@@ -20,6 +22,8 @@ type Result = {
 };
 
 const TEST_DURATION = 20;
+const ACTIVITY_KEY = 'activity-five';
+const ACTIVITY_TITLE = 'Human Performance Lab';
 
 export default function ActivityFiveGame() {
   const { colors } = useAppTheme();
@@ -36,6 +40,22 @@ export default function ActivityFiveGame() {
   const subscriptionRef = useRef<{ remove: () => void } | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const motionChangesRef = useRef<number[]>([]);
+  const totalMovementRef = useRef(0);
+  const attemptNumberRef = useRef(1);
+
+  useEffect(() => {
+    attemptNumberRef.current = attemptNumber;
+  }, [attemptNumber]);
+
+  useEffect(() => {
+    motionChangesRef.current = motionChanges;
+  }, [motionChanges]);
+
+  useEffect(() => {
+    totalMovementRef.current = totalMovement;
+  }, [totalMovement]);
+
   const stopSensor = () => {
     subscriptionRef.current?.remove();
     subscriptionRef.current = null;
@@ -48,42 +68,76 @@ export default function ActivityFiveGame() {
     }
   };
 
-  const finishTest = () => {
+  const finishTest = async () => {
     stopSensor();
     stopTimer();
     setIsRunning(false);
 
-    setMotionChanges((changes) => {
-      const averageChange =
-        changes.length === 0
-          ? 0
-          : changes.reduce((total, value) => total + value, 0) / changes.length;
+    const finalChanges = motionChangesRef.current;
+    const finalTotalMovement = totalMovementRef.current;
 
-      const smoothnessScore = Math.max(
-        0,
-        Math.round(100 - averageChange * 350)
-      );
+    const averageChange =
+      finalChanges.length === 0
+        ? 0
+        : finalChanges.reduce((total, value) => total + value, 0) /
+          finalChanges.length;
 
-      const movementScore = Math.min(100, Math.round(totalMovement * 10));
+    const smoothnessScore = Math.max(
+      0,
+      Math.round(100 - averageChange * 350)
+    );
 
-      const newResult: Result = {
-        id: Date.now(),
-        attemptName: `Attempt ${attemptNumber}`,
-        smoothnessScore,
-        movementScore,
-        averageChange,
-      };
+    const movementScore = Math.min(100, Math.round(finalTotalMovement * 10));
 
-      setResults((currentResults) => [newResult, ...currentResults]);
-      setAttemptNumber((current) => current + 1);
+    const attemptName = `Attempt ${attemptNumberRef.current}`;
+
+    const newResult: Result = {
+      id: Date.now(),
+      attemptName,
+      smoothnessScore,
+      movementScore,
+      averageChange,
+    };
+
+    setResults((currentResults) => [newResult, ...currentResults]);
+    setAttemptNumber((current) => current + 1);
+
+    try {
+      const savedResultId = await saveActivityResult({
+        activityKey: ACTIVITY_KEY,
+        activityTitle: ACTIVITY_TITLE,
+        label: attemptName,
+        score: smoothnessScore,
+        data: {
+          smoothnessScore,
+          movementScore,
+          averageChange,
+          totalMovement: finalTotalMovement,
+          testDurationSeconds: TEST_DURATION,
+          readingCount: finalChanges.length,
+        },
+      });
 
       Alert.alert(
         'Performance Test Complete',
-        `Smoothness score: ${smoothnessScore}/100`
+        `Smoothness score: ${smoothnessScore}/100`,
+        [
+          {
+            text: 'View Summary',
+            onPress: () => {
+              router.push(`/result-summary?resultId=${savedResultId}` as never);
+            },
+          },
+        ]
       );
+    } catch (error) {
+      console.log('Failed to save performance result:', error);
 
-      return changes;
-    });
+      Alert.alert(
+        'Result Calculated',
+        `Smoothness score: ${smoothnessScore}/100\n\nThe result was shown on this screen, but it could not be saved to the local database.`
+      );
+    }
   };
 
   const startTest = () => {
@@ -107,6 +161,9 @@ export default function ActivityFiveGame() {
             setMotionChanges([]);
             setTotalMovement(0);
             setCurrentMotion(0);
+
+            motionChangesRef.current = [];
+            totalMovementRef.current = 0;
             previousMagnitudeRef.current = null;
 
             Accelerometer.setUpdateInterval(120);
@@ -120,12 +177,16 @@ export default function ActivityFiveGame() {
 
               if (previous !== null) {
                 const change = Math.abs(magnitude - previous);
+
                 setCurrentMotion(change);
-                setTotalMovement((currentTotal) => currentTotal + change);
-                setMotionChanges((currentChanges) => [
-                  ...currentChanges,
-                  change,
-                ]);
+
+                const updatedTotal = totalMovementRef.current + change;
+                totalMovementRef.current = updatedTotal;
+                setTotalMovement(updatedTotal);
+
+                const updatedChanges = [...motionChangesRef.current, change];
+                motionChangesRef.current = updatedChanges;
+                setMotionChanges(updatedChanges);
               }
 
               previousMagnitudeRef.current = magnitude;
@@ -150,7 +211,7 @@ export default function ActivityFiveGame() {
   const resetResults = () => {
     Alert.alert(
       'Clear Performance Results?',
-      'This will remove all saved attempts from this screen.',
+      'This will remove the temporary attempts from this screen. Saved SQLite leaderboard results will not be deleted here.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -159,10 +220,15 @@ export default function ActivityFiveGame() {
           onPress: () => {
             setResults([]);
             setAttemptNumber(1);
+            attemptNumberRef.current = 1;
           },
         },
       ]
     );
+  };
+
+  const openLeaderboard = () => {
+    router.push('/leaderboard?activityKey=activity-five' as never);
   };
 
   useEffect(() => {
@@ -232,6 +298,19 @@ export default function ActivityFiveGame() {
             {isRunning ? 'Measuring...' : 'Start 20 Second Test'}
           </Text>
         </Pressable>
+
+        <Pressable
+          onPress={openLeaderboard}
+          style={({ pressed }) => [
+            styles.secondaryButton,
+            { borderColor: colors.tint },
+            pressed && styles.buttonPressed,
+          ]}
+        >
+          <Text style={[styles.secondaryButtonText, { color: colors.tint }]}>
+            View Leaderboard
+          </Text>
+        </Pressable>
       </View>
 
       <View
@@ -241,7 +320,7 @@ export default function ActivityFiveGame() {
         ]}
       >
         <Text style={[styles.cardTitle, { color: colors.text }]}>
-          Attempts
+          Temporary Attempts
         </Text>
 
         {results.length === 0 ? (
@@ -274,13 +353,13 @@ export default function ActivityFiveGame() {
           <Pressable
             onPress={resetResults}
             style={({ pressed }) => [
-              styles.secondaryButton,
+              styles.clearButton,
               { borderColor: colors.danger },
               pressed && styles.buttonPressed,
             ]}
           >
             <Text style={[styles.secondaryButtonText, { color: colors.danger }]}>
-              Clear Results
+              Clear Temporary Results
             </Text>
           </Pressable>
         )}
@@ -313,6 +392,14 @@ const styles = StyleSheet.create({
   resultTitle: { fontSize: 16, fontWeight: '800', marginBottom: 4 },
   score: { marginTop: 4, fontSize: 15, fontWeight: '900' },
   secondaryButton: {
+    marginTop: 12,
+    minHeight: 52,
+    borderRadius: 18,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  clearButton: {
     marginTop: 14,
     minHeight: 48,
     borderRadius: 16,
