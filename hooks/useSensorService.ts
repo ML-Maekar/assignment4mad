@@ -7,6 +7,11 @@ type SensorData = {
   z: number;
 };
 
+type StartSensorOptions = {
+  updateInterval?: number;
+  onData?: (data: SensorData) => void;
+};
+
 type SensorServiceState = {
   accelerometer: SensorData;
   gyroscope: SensorData;
@@ -19,9 +24,11 @@ type SensorServiceState = {
   accelerometerAvailable: boolean | null;
   gyroscopeAvailable: boolean | null;
   errorMessage: string | null;
-  startAccelerometer: () => Promise<void>;
+  checkAccelerometerAvailability: () => Promise<boolean>;
+  checkGyroscopeAvailability: () => Promise<boolean>;
+  startAccelerometer: (options?: StartSensorOptions) => Promise<boolean>;
   stopAccelerometer: () => void;
-  startGyroscope: () => Promise<void>;
+  startGyroscope: (options?: StartSensorOptions) => Promise<boolean>;
   stopGyroscope: () => void;
   stopAllSensors: () => void;
   resetSensorData: () => void;
@@ -35,6 +42,14 @@ const EMPTY_SENSOR_DATA: SensorData = {
 
 function getMagnitude(data: SensorData) {
   return Math.sqrt(data.x * data.x + data.y * data.y + data.z * data.z);
+}
+
+export function getSensorMagnitude(data: SensorData) {
+  return getMagnitude(data);
+}
+
+export function getMovementStrength(data: SensorData) {
+  return Math.abs(getMagnitude(data) - 1);
 }
 
 export function useSensorService(): SensorServiceState {
@@ -63,6 +78,42 @@ export function useSensorService(): SensorServiceState {
   const movementStrength = Math.abs(accelerometerMagnitude - 1);
   const rotationStrength = gyroscopeMagnitude;
 
+  const checkAccelerometerAvailability = async () => {
+    try {
+      const available = await Accelerometer.isAvailableAsync();
+      setAccelerometerAvailable(available);
+
+      if (!available) {
+        setErrorMessage('Accelerometer is not available on this device.');
+      }
+
+      return available;
+    } catch (error) {
+      console.log('Could not check accelerometer availability:', error);
+      setAccelerometerAvailable(false);
+      setErrorMessage('Could not check accelerometer availability.');
+      return false;
+    }
+  };
+
+  const checkGyroscopeAvailability = async () => {
+    try {
+      const available = await Gyroscope.isAvailableAsync();
+      setGyroscopeAvailable(available);
+
+      if (!available) {
+        setErrorMessage('Gyroscope is not available on this device.');
+      }
+
+      return available;
+    } catch (error) {
+      console.log('Could not check gyroscope availability:', error);
+      setGyroscopeAvailable(false);
+      setErrorMessage('Could not check gyroscope availability.');
+      return false;
+    }
+  };
+
   const stopAccelerometer = () => {
     accelerometerSubscriptionRef.current?.remove();
     accelerometerSubscriptionRef.current = null;
@@ -86,67 +137,75 @@ export function useSensorService(): SensorServiceState {
     setErrorMessage(null);
   };
 
-  const startAccelerometer = async () => {
+  const startAccelerometer = async (options?: StartSensorOptions) => {
     try {
       setErrorMessage(null);
 
-      const available = await Accelerometer.isAvailableAsync();
-      setAccelerometerAvailable(available);
+      const available = await checkAccelerometerAvailability();
 
       if (!available) {
-        setErrorMessage('Accelerometer is not available on this device.');
-        return;
+        return false;
       }
 
       stopAccelerometer();
 
-      Accelerometer.setUpdateInterval(200);
+      Accelerometer.setUpdateInterval(options?.updateInterval ?? 200);
 
       accelerometerSubscriptionRef.current = Accelerometer.addListener(
         (data) => {
-          setAccelerometer({
+          const sensorData: SensorData = {
             x: data.x,
             y: data.y,
             z: data.z,
-          });
+          };
+
+          setAccelerometer(sensorData);
+          options?.onData?.(sensorData);
         }
       );
 
       setIsAccelerometerRunning(true);
+      return true;
     } catch (error) {
+      console.log('Could not start accelerometer:', error);
       setErrorMessage('Could not start the accelerometer sensor.');
       setIsAccelerometerRunning(false);
+      return false;
     }
   };
 
-  const startGyroscope = async () => {
+  const startGyroscope = async (options?: StartSensorOptions) => {
     try {
       setErrorMessage(null);
 
-      const available = await Gyroscope.isAvailableAsync();
-      setGyroscopeAvailable(available);
+      const available = await checkGyroscopeAvailability();
 
       if (!available) {
-        setErrorMessage('Gyroscope is not available on this device.');
-        return;
+        return false;
       }
 
       stopGyroscope();
 
-      Gyroscope.setUpdateInterval(200);
+      Gyroscope.setUpdateInterval(options?.updateInterval ?? 200);
 
       gyroscopeSubscriptionRef.current = Gyroscope.addListener((data) => {
-        setGyroscope({
+        const sensorData: SensorData = {
           x: data.x,
           y: data.y,
           z: data.z,
-        });
+        };
+
+        setGyroscope(sensorData);
+        options?.onData?.(sensorData);
       });
 
       setIsGyroscopeRunning(true);
+      return true;
     } catch (error) {
+      console.log('Could not start gyroscope:', error);
       setErrorMessage('Could not start the gyroscope sensor.');
       setIsGyroscopeRunning(false);
+      return false;
     }
   };
 
@@ -168,6 +227,8 @@ export function useSensorService(): SensorServiceState {
     accelerometerAvailable,
     gyroscopeAvailable,
     errorMessage,
+    checkAccelerometerAvailability,
+    checkGyroscopeAvailability,
     startAccelerometer,
     stopAccelerometer,
     startGyroscope,
