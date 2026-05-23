@@ -3,12 +3,12 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_AUTH_DOMAIN",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_STORAGE_BUCKET",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID",
+  apiKey: "AIzaSyAoTRkajQ8Cqf6kdWk_SliNv2g-uxW_5yA",
+  authDomain: "stemm-app-f6675.firebaseapp.com",
+  projectId: "stemm-app-f6675",
+  storageBucket: "stemm-app-f6675.firebasestorage.app",
+  messagingSenderId: "919781898546",
+  appId: "1:919781898546:web:b991659fa86a2bfa8c3f2b"
 };
 
 const app = initializeApp(firebaseConfig);
