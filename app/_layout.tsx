@@ -8,17 +8,12 @@ import { StatusBar } from 'expo-status-bar';
 import React from 'react';
 import 'react-native-reanimated';
 
-import FloatingHomeButton from '@/components/FloatingHomeButton';
 import GlobalBatteryStatus from '@/components/GlobalBatteryStatus';
 import NotificationSetup from '@/components/NotificationSetup';
 import {
   ThemeProvider as AppThemeProvider,
   useAppTheme,
 } from '@/contexts/AppThemeContext';
-
-export const unstable_settings = {
-  anchor: '(tabs)',
-};
 
 function RootLayoutContent() {
   const { activeTheme, colors } = useAppTheme();
@@ -44,6 +39,34 @@ function RootLayoutContent() {
           },
         }}
       >
+        <Stack.Screen
+          name="index"
+          options={{
+            headerShown: false,
+          }}
+        />
+
+        <Stack.Screen
+          name="register_screen"
+          options={{
+            headerShown: false,
+          }}
+        />
+
+        <Stack.Screen
+          name="login_screen"
+          options={{
+            headerShown: false,
+          }}
+        />
+
+        <Stack.Screen
+          name="team_setup"
+          options={{
+            headerShown: false,
+          }}
+        />
+
         <Stack.Screen
           name="(tabs)"
           options={{
@@ -73,6 +96,55 @@ function RootLayoutContent() {
         />
 
         <Stack.Screen
+          name="activity-one-game"
+          options={{
+            title: 'Parachute Drop Test',
+          }}
+        />
+
+        <Stack.Screen
+          name="activity-two-game"
+          options={{
+            title: 'Sound Pollution Test',
+          }}
+        />
+
+        <Stack.Screen
+          name="activity-three-game"
+          options={{
+            title: 'Hand Fan Test',
+          }}
+        />
+
+        <Stack.Screen
+          name="activity-four-game"
+          options={{
+            title: 'Earthquake Test',
+          }}
+        />
+
+        <Stack.Screen
+          name="activity-five-game"
+          options={{
+            title: 'Human Performance Lab',
+          }}
+        />
+
+        <Stack.Screen
+          name="activity-six-game"
+          options={{
+            title: 'Reaction Board',
+          }}
+        />
+
+        <Stack.Screen
+          name="activity-seven-game"
+          options={{
+            title: 'Breathing Trainer',
+          }}
+        />
+
+        <Stack.Screen
           name="modal"
           options={{
             presentation: 'modal',
@@ -82,7 +154,6 @@ function RootLayoutContent() {
       </Stack>
 
       <GlobalBatteryStatus />
-      <FloatingHomeButton />
 
       <StatusBar style={activeTheme === 'dark' ? 'light' : 'dark'} />
     </NavigationThemeProvider>
