@@ -1,5 +1,4 @@
 import { router } from 'expo-router';
-import { Accelerometer } from 'expo-sensors';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -11,7 +10,12 @@ import {
 
 import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
+import {
+  getMovementStrength,
+  useSensorService,
+} from '@/hooks/useSensorService';
 import { saveActivityResult } from '@/utils/activityResultsDb';
+import { scheduleActivityCompleteNotification } from '@/utils/notifications';
 import {
   getOfflineDraftByKey,
   parseOfflineDraftData,
@@ -62,6 +66,8 @@ function calculateBreathingScore(mode: BreathingMode, breathsPerMinute: number) 
 
 export default function ActivitySevenGame() {
   const { colors } = useAppTheme();
+  const { startAccelerometer, stopAccelerometer, resetSensorData } =
+    useSensorService();
 
   const [mode, setMode] = useState<BreathingMode>('At Rest');
   const [isRunning, setIsRunning] = useState(false);
@@ -73,7 +79,6 @@ export default function ActivitySevenGame() {
     'idle'
   );
 
-  const subscriptionRef = useRef<{ remove: () => void } | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const previousValueRef = useRef(0);
   const lastPeakTimeRef = useRef(0);
@@ -142,11 +147,6 @@ export default function ActivitySevenGame() {
     saveModeDraft();
   }, [mode]);
 
-  const stopSensor = () => {
-    subscriptionRef.current?.remove();
-    subscriptionRef.current = null;
-  };
-
   const stopTimer = () => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -155,7 +155,7 @@ export default function ActivitySevenGame() {
   };
 
   const finishTest = async () => {
-    stopSensor();
+    stopAccelerometer();
     stopTimer();
     setIsRunning(false);
 
@@ -191,8 +191,14 @@ export default function ActivitySevenGame() {
           targetBreathsPerMinute: getBreathingTarget(selectedMode),
           breathingScore,
           testDurationSeconds: TEST_DURATION,
+          sensorServiceUsed: true,
         },
       });
+
+      void scheduleActivityCompleteNotification(
+        ACTIVITY_TITLE,
+        breathingScore
+      );
 
       Alert.alert(
         'Breathing Test Complete',
@@ -235,8 +241,7 @@ export default function ActivitySevenGame() {
         },
         {
           text: 'Start',
-          onPress: () => {
-            setIsRunning(true);
+          onPress: async () => {
             setTimeLeft(TEST_DURATION);
             setBreaths(0);
             setCurrentMotion(0);
@@ -244,37 +249,45 @@ export default function ActivitySevenGame() {
             breathsRef.current = 0;
             previousValueRef.current = 0;
             lastPeakTimeRef.current = 0;
+            resetSensorData();
 
-            Accelerometer.setUpdateInterval(200);
+            const started = await startAccelerometer({
+              updateInterval: 200,
+              onData: (data) => {
+                const breathingMotion = getMovementStrength(data);
+                setCurrentMotion(breathingMotion);
 
-            subscriptionRef.current = Accelerometer.addListener((data) => {
-              const magnitude = Math.sqrt(
-                data.x * data.x + data.y * data.y + data.z * data.z
-              );
+                const previousValue = previousValueRef.current;
+                const now = Date.now();
 
-              const breathingMotion = Math.abs(magnitude - 1);
-              setCurrentMotion(breathingMotion);
+                const crossedPeak =
+                  previousValue < PEAK_THRESHOLD &&
+                  breathingMotion >= PEAK_THRESHOLD;
 
-              const previousValue = previousValueRef.current;
-              const now = Date.now();
+                const enoughTimePassed =
+                  now - lastPeakTimeRef.current > MIN_PEAK_GAP_MS;
 
-              const crossedPeak =
-                previousValue < PEAK_THRESHOLD &&
-                breathingMotion >= PEAK_THRESHOLD;
+                if (crossedPeak && enoughTimePassed) {
+                  lastPeakTimeRef.current = now;
 
-              const enoughTimePassed =
-                now - lastPeakTimeRef.current > MIN_PEAK_GAP_MS;
+                  const updatedBreaths = breathsRef.current + 1;
+                  breathsRef.current = updatedBreaths;
+                  setBreaths(updatedBreaths);
+                }
 
-              if (crossedPeak && enoughTimePassed) {
-                lastPeakTimeRef.current = now;
-
-                const updatedBreaths = breathsRef.current + 1;
-                breathsRef.current = updatedBreaths;
-                setBreaths(updatedBreaths);
-              }
-
-              previousValueRef.current = breathingMotion;
+                previousValueRef.current = breathingMotion;
+              },
             });
+
+            if (!started) {
+              Alert.alert(
+                'Sensor Unavailable',
+                'The accelerometer could not be started on this device.'
+              );
+              return;
+            }
+
+            setIsRunning(true);
 
             let remaining = TEST_DURATION;
 
@@ -313,7 +326,7 @@ export default function ActivitySevenGame() {
 
   useEffect(() => {
     return () => {
-      stopSensor();
+      stopAccelerometer();
       stopTimer();
     };
   }, []);

@@ -1,5 +1,4 @@
 import { router } from 'expo-router';
-import { Accelerometer } from 'expo-sensors';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -12,7 +11,12 @@ import {
 
 import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
+import {
+  getMovementStrength,
+  useSensorService,
+} from '@/hooks/useSensorService';
 import { saveActivityResult } from '@/utils/activityResultsDb';
+import { scheduleActivityCompleteNotification } from '@/utils/notifications';
 import {
   deleteOfflineDraftByKey,
   getOfflineDraftByKey,
@@ -39,6 +43,8 @@ const DRAFT_KEY = 'activity-four-earthquake-draft';
 
 export default function ActivityFourGame() {
   const { colors } = useAppTheme();
+  const { startAccelerometer, stopAccelerometer, resetSensorData } =
+    useSensorService();
 
   const [designName, setDesignName] = useState('');
   const [isRunning, setIsRunning] = useState(false);
@@ -52,7 +58,6 @@ export default function ActivityFourGame() {
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const subscriptionRef = useRef<{ remove: () => void } | null>(null);
   const readingsRef = useRef<number[]>([]);
   const resultsCountRef = useRef(0);
   const designNameRef = useRef('');
@@ -135,11 +140,6 @@ export default function ActivityFourGame() {
     };
   }, [designName]);
 
-  const stopSensor = () => {
-    subscriptionRef.current?.remove();
-    subscriptionRef.current = null;
-  };
-
   const stopTimer = () => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -148,7 +148,7 @@ export default function ActivityFourGame() {
   };
 
   const finishTest = async () => {
-    stopSensor();
+    stopAccelerometer();
     stopTimer();
     setIsRunning(false);
 
@@ -196,11 +196,17 @@ export default function ActivityFourGame() {
           averageMovement,
           testDurationSeconds: TEST_DURATION,
           readingCount: finalReadings.length,
+          sensorServiceUsed: true,
         },
       });
 
       await deleteOfflineDraftByKey(DRAFT_KEY);
       setDraftStatus('idle');
+
+      void scheduleActivityCompleteNotification(
+        ACTIVITY_TITLE,
+        stabilityScore
+      );
 
       Alert.alert(
         'Earthquake Test Complete',
@@ -211,6 +217,10 @@ export default function ActivityFourGame() {
             onPress: () => {
               router.push(`/result-summary?resultId=${savedResultId}` as never);
             },
+          },
+          {
+            text: 'Stay Here',
+            style: 'cancel',
           },
         ]
       );
@@ -239,27 +249,34 @@ export default function ActivityFourGame() {
         },
         {
           text: 'Start',
-          onPress: () => {
+          onPress: async () => {
             readingsRef.current = [];
             setReadings([]);
             setCurrentMovement(0);
             setTimeLeft(TEST_DURATION);
-            setIsRunning(true);
+            resetSensorData();
 
-            Accelerometer.setUpdateInterval(150);
+            const started = await startAccelerometer({
+              updateInterval: 150,
+              onData: (data) => {
+                const movement = getMovementStrength(data);
 
-            subscriptionRef.current = Accelerometer.addListener((data) => {
-              const magnitude = Math.sqrt(
-                data.x * data.x + data.y * data.y + data.z * data.z
-              );
+                setCurrentMovement(movement);
 
-              const movement = Math.abs(magnitude - 1);
-
-              setCurrentMovement(movement);
-
-              readingsRef.current = [...readingsRef.current, movement];
-              setReadings(readingsRef.current);
+                readingsRef.current = [...readingsRef.current, movement];
+                setReadings(readingsRef.current);
+              },
             });
+
+            if (!started) {
+              Alert.alert(
+                'Sensor Unavailable',
+                'The accelerometer could not be started on this device.'
+              );
+              return;
+            }
+
+            setIsRunning(true);
 
             let remaining = TEST_DURATION;
 
@@ -331,7 +348,7 @@ export default function ActivityFourGame() {
 
   useEffect(() => {
     return () => {
-      stopSensor();
+      stopAccelerometer();
       stopTimer();
 
       if (draftSaveTimerRef.current) {
@@ -513,33 +530,12 @@ export default function ActivityFourGame() {
 }
 
 const styles = StyleSheet.create({
-  header: {
-    marginBottom: 24,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '900',
-  },
-  subtitle: {
-    marginTop: 8,
-    fontSize: 16,
-    lineHeight: 22,
-  },
-  card: {
-    borderWidth: 1,
-    borderRadius: 22,
-    padding: 18,
-    marginBottom: 16,
-  },
-  cardTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    marginBottom: 12,
-  },
-  body: {
-    fontSize: 15,
-    lineHeight: 22,
-  },
+  header: { marginBottom: 24 },
+  title: { fontSize: 32, fontWeight: '900' },
+  subtitle: { marginTop: 8, fontSize: 16, lineHeight: 22 },
+  card: { borderWidth: 1, borderRadius: 22, padding: 18, marginBottom: 16 },
+  cardTitle: { fontSize: 20, fontWeight: '800', marginBottom: 12 },
+  body: { fontSize: 15, lineHeight: 22 },
   input: {
     borderWidth: 1,
     borderRadius: 14,
@@ -554,32 +550,12 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 16,
   },
-  draftStatus: {
-    flex: 1,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  clearDraftText: {
-    fontSize: 13,
-    fontWeight: '900',
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 16,
-  },
-  statBox: {
-    flex: 1,
-  },
-  statLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  statValue: {
-    marginTop: 4,
-    fontSize: 24,
-    fontWeight: '900',
-  },
+  draftStatus: { flex: 1, fontSize: 13, fontWeight: '700' },
+  clearDraftText: { fontSize: 13, fontWeight: '900' },
+  statsRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
+  statBox: { flex: 1 },
+  statLabel: { fontSize: 13, fontWeight: '700' },
+  statValue: { marginTop: 4, fontSize: 24, fontWeight: '900' },
   button: {
     minHeight: 56,
     borderRadius: 18,
@@ -602,31 +578,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  buttonPressed: {
-    transform: [{ scale: 0.98 }],
-    opacity: 0.85,
-  },
-  buttonText: {
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  secondaryButtonText: {
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  resultRow: {
-    borderTopWidth: 1,
-    paddingTop: 12,
-    marginTop: 12,
-  },
-  resultTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    marginBottom: 4,
-  },
-  score: {
-    marginTop: 4,
-    fontSize: 15,
-    fontWeight: '900',
-  },
+  buttonPressed: { transform: [{ scale: 0.98 }], opacity: 0.85 },
+  buttonText: { fontSize: 16, fontWeight: '800' },
+  secondaryButtonText: { fontSize: 15, fontWeight: '800' },
+  resultRow: { borderTopWidth: 1, paddingTop: 12, marginTop: 12 },
+  resultTitle: { fontSize: 16, fontWeight: '800', marginBottom: 4 },
+  score: { marginTop: 4, fontSize: 15, fontWeight: '900' },
 });
