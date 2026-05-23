@@ -11,6 +11,7 @@ import {
 import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
 import { saveActivityResult } from '@/utils/activityResultsDb';
+import { scheduleActivityCompleteNotification } from '@/utils/notifications';
 import {
   getOfflineDraftByKey,
   parseOfflineDraftData,
@@ -184,6 +185,8 @@ export default function ActivitySixGame() {
             reactionScore: score,
           },
         });
+
+        void scheduleActivityCompleteNotification(ACTIVITY_TITLE, score);
 
         Alert.alert(
           'Round Complete',

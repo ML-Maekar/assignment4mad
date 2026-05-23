@@ -121,6 +121,70 @@ export async function scheduleChallengeReminder() {
   return true;
 }
 
+export async function scheduleActivityCompleteNotification(
+  activityTitle: string,
+  score?: number
+) {
+  const hasPermission = await requestNotificationPermission();
+
+  if (!hasPermission) {
+    return false;
+  }
+
+  const Notifications = getNotificationsModule();
+
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: 'Activity Complete',
+      body:
+        typeof score === 'number'
+          ? `${activityTitle} finished. Your score was ${Math.round(score)}/100.`
+          : `${activityTitle} finished. Your result has been saved.`,
+      sound: true,
+      data: {
+        type: 'activity-complete',
+        activityTitle,
+        score,
+      },
+    },
+    trigger: {
+      seconds: 1,
+    },
+  });
+
+  return true;
+}
+
+export async function scheduleActivityReminderNotification(
+  activityTitle: string,
+  seconds = 15
+) {
+  const hasPermission = await requestNotificationPermission();
+
+  if (!hasPermission) {
+    return false;
+  }
+
+  const Notifications = getNotificationsModule();
+
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: 'STEMM Lab Reminder',
+      body: `Remember to complete or save your ${activityTitle} activity.`,
+      sound: true,
+      data: {
+        type: 'activity-reminder',
+        activityTitle,
+      },
+    },
+    trigger: {
+      seconds,
+    },
+  });
+
+  return true;
+}
+
 export async function cancelAllScheduledNotifications() {
   try {
     const Notifications = getNotificationsModule();

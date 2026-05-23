@@ -1,5 +1,4 @@
 import { router } from 'expo-router';
-import { Accelerometer } from 'expo-sensors';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -11,7 +10,12 @@ import {
 
 import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
+import {
+  getSensorMagnitude,
+  useSensorService,
+} from '@/hooks/useSensorService';
 import { saveActivityResult } from '@/utils/activityResultsDb';
+import { scheduleActivityCompleteNotification } from '@/utils/notifications';
 
 type Result = {
   id: number;
@@ -27,6 +31,8 @@ const ACTIVITY_TITLE = 'Human Performance Lab';
 
 export default function ActivityFiveGame() {
   const { colors } = useAppTheme();
+  const { startAccelerometer, stopAccelerometer, resetSensorData } =
+    useSensorService();
 
   const [attemptNumber, setAttemptNumber] = useState(1);
   const [isRunning, setIsRunning] = useState(false);
@@ -37,7 +43,6 @@ export default function ActivityFiveGame() {
   const [results, setResults] = useState<Result[]>([]);
 
   const previousMagnitudeRef = useRef<number | null>(null);
-  const subscriptionRef = useRef<{ remove: () => void } | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const motionChangesRef = useRef<number[]>([]);
@@ -56,11 +61,6 @@ export default function ActivityFiveGame() {
     totalMovementRef.current = totalMovement;
   }, [totalMovement]);
 
-  const stopSensor = () => {
-    subscriptionRef.current?.remove();
-    subscriptionRef.current = null;
-  };
-
   const stopTimer = () => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -69,7 +69,7 @@ export default function ActivityFiveGame() {
   };
 
   const finishTest = async () => {
-    stopSensor();
+    stopAccelerometer();
     stopTimer();
     setIsRunning(false);
 
@@ -115,8 +115,14 @@ export default function ActivityFiveGame() {
           totalMovement: finalTotalMovement,
           testDurationSeconds: TEST_DURATION,
           readingCount: finalChanges.length,
+          sensorServiceUsed: true,
         },
       });
+
+      void scheduleActivityCompleteNotification(
+        ACTIVITY_TITLE,
+        smoothnessScore
+      );
 
       Alert.alert(
         'Performance Test Complete',
@@ -127,6 +133,10 @@ export default function ActivityFiveGame() {
             onPress: () => {
               router.push(`/result-summary?resultId=${savedResultId}` as never);
             },
+          },
+          {
+            text: 'Stay Here',
+            style: 'cancel',
           },
         ]
       );
@@ -155,8 +165,7 @@ export default function ActivityFiveGame() {
         },
         {
           text: 'Start',
-          onPress: () => {
-            setIsRunning(true);
+          onPress: async () => {
             setTimeLeft(TEST_DURATION);
             setMotionChanges([]);
             setTotalMovement(0);
@@ -165,32 +174,44 @@ export default function ActivityFiveGame() {
             motionChangesRef.current = [];
             totalMovementRef.current = 0;
             previousMagnitudeRef.current = null;
+            resetSensorData();
 
-            Accelerometer.setUpdateInterval(120);
+            const started = await startAccelerometer({
+              updateInterval: 120,
+              onData: (data) => {
+                const magnitude = getSensorMagnitude(data);
+                const previous = previousMagnitudeRef.current;
 
-            subscriptionRef.current = Accelerometer.addListener((data) => {
-              const magnitude = Math.sqrt(
-                data.x * data.x + data.y * data.y + data.z * data.z
-              );
+                if (previous !== null) {
+                  const change = Math.abs(magnitude - previous);
 
-              const previous = previousMagnitudeRef.current;
+                  setCurrentMotion(change);
 
-              if (previous !== null) {
-                const change = Math.abs(magnitude - previous);
+                  const updatedTotal = totalMovementRef.current + change;
+                  totalMovementRef.current = updatedTotal;
+                  setTotalMovement(updatedTotal);
 
-                setCurrentMotion(change);
+                  const updatedChanges = [
+                    ...motionChangesRef.current,
+                    change,
+                  ];
+                  motionChangesRef.current = updatedChanges;
+                  setMotionChanges(updatedChanges);
+                }
 
-                const updatedTotal = totalMovementRef.current + change;
-                totalMovementRef.current = updatedTotal;
-                setTotalMovement(updatedTotal);
-
-                const updatedChanges = [...motionChangesRef.current, change];
-                motionChangesRef.current = updatedChanges;
-                setMotionChanges(updatedChanges);
-              }
-
-              previousMagnitudeRef.current = magnitude;
+                previousMagnitudeRef.current = magnitude;
+              },
             });
+
+            if (!started) {
+              Alert.alert(
+                'Sensor Unavailable',
+                'The accelerometer could not be started on this device.'
+              );
+              return;
+            }
+
+            setIsRunning(true);
 
             let remaining = TEST_DURATION;
 
@@ -233,7 +254,7 @@ export default function ActivityFiveGame() {
 
   useEffect(() => {
     return () => {
-      stopSensor();
+      stopAccelerometer();
       stopTimer();
     };
   }, []);
