@@ -1,3 +1,16 @@
+import SensorServicePanel from '@/components/SensorServicePanel';
+import {
+  ThemePreference,
+  useAppTheme,
+} from '@/contexts/AppThemeContext';
+import { usePermissions } from '@/contexts/PermissionsContext';
+import {
+  cancelAllScheduledNotifications,
+  getNotificationPermissionStatus,
+  requestNotificationPermission,
+  scheduleChallengeReminder,
+  scheduleTestNotification,
+} from '@/utils/notifications';
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
@@ -8,19 +21,6 @@ import {
   Text,
   View,
 } from 'react-native';
-
-import SensorServicePanel from '@/components/SensorServicePanel';
-import {
-  ThemePreference,
-  useAppTheme,
-} from '@/contexts/AppThemeContext';
-import {
-  cancelAllScheduledNotifications,
-  getNotificationPermissionStatus,
-  requestNotificationPermission,
-  scheduleChallengeReminder,
-  scheduleTestNotification,
-} from '@/utils/notifications';
 
 type ThemeOption = {
   label: string;
@@ -128,21 +128,33 @@ export default function SettingScreen() {
   const { colors, themePreference, activeTheme, setThemePreference } =
     useAppTheme();
 
+  const {
+    motionGranted,
+    batteryGranted,
+    enableMotion,
+    disableMotion,
+    enableBattery,
+    disableBattery,
+  } = usePermissions();
+
   const [permissions, setPermissions] =
     useState<Record<PermissionKey, boolean>>(initialPermissions);
 
   useEffect(() => {
-    async function loadNotificationStatus() {
+    async function loadPermissionStatuses() {
+      // Notifications
       const status = await getNotificationPermissionStatus();
-
-      setPermissions((currentPermissions) => ({
-        ...currentPermissions,
-        notifications: status === 'granted',
+      setPermissions((current) => ({
+          ...current,
+          notifications: status === 'granted',
+          // Sync motion and battery from PermissionsContext
+        motion: motionGranted,
+        battery: batteryGranted,
       }));
     }
 
-    loadNotificationStatus();
-  }, []);
+    loadPermissionStatuses();
+  }, [motionGranted, batteryGranted]);
 
   const updatePermission = (key: PermissionKey, value: boolean) => {
     setPermissions((currentPermissions) => ({
@@ -215,43 +227,107 @@ export default function SettingScreen() {
       return;
     }
 
+    // Motion sensors — connected to real permissionService
+    if (permission.key === 'motion') {
+      if (permissions.motion) {
+        Alert.alert(
+          'Turn Off Motion Sensors?',
+          'Activities 4, 5, and 7 require motion sensors to work. Turning this off will block those activities.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Turn Off',
+              style: 'destructive',
+              onPress: async () => {
+                await disableMotion();
+                updatePermission('motion', false);
+              },
+            },
+          ]
+        );
+      } else {
+        Alert.alert(
+          'Allow Motion Sensors?',
+          'STEMM Lab needs motion sensors for the Earthquake, Performance Lab, and Breathing activities.',
+          [
+            { text: 'Not Now', style: 'cancel' },
+            {
+              text: 'Allow',
+              onPress: async () => {
+                const granted = await enableMotion();
+                updatePermission('motion', granted);
+              },
+            },
+          ]
+        );
+      }
+      return;
+    }
+
+    // Battery status — connected to real permissionService
+    if (permission.key === 'battery') {
+      if (permissions.battery) {
+        Alert.alert(
+          'Turn Off Battery Status?',
+          'The battery widget will stop updating and show a frozen reading.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Turn Off',
+              style: 'destructive',
+              onPress: async () => {
+                await disableBattery();
+                updatePermission('battery', false);
+              },
+            },
+          ]
+        );
+      } else {
+        Alert.alert(
+          'Allow Battery Status?',
+          'STEMM Lab will show live battery level and charging status.',
+          [
+            { text: 'Not Now', style: 'cancel' },
+            {
+              text: 'Allow',
+              onPress: async () => {
+                const granted = await enableBattery();
+                updatePermission('battery', granted);
+              },
+            },
+          ]
+        );
+      }
+      return;
+    }
+
+    // All other permissions — UI placeholder for now
     const isEnabled = permissions[permission.key];
 
     if (isEnabled) {
       Alert.alert(
         `Remove ${permission.title} Permission?`,
-        `STEMM Lab may not be able to use ${permission.title.toLowerCase()} features if this is turned off. Do you want to continue?`,
+        `STEMM Lab may not be able to use ${permission.title.toLowerCase()} features if this is turned off.`,
         [
-          {
-            text: 'Cancel',
-            style: 'cancel',
-          },
+          { text: 'Cancel', style: 'cancel' },
           {
             text: 'Turn Off',
             style: 'destructive',
-            onPress: () => {
-              updatePermission(permission.key, false);
-            },
+            onPress: () => updatePermission(permission.key, false),
           },
         ]
       );
-
       return;
     }
 
     Alert.alert(
       `Allow ${permission.title}?`,
-      `STEMM Lab would like to use ${permission.title.toLowerCase()} for app activities. Do you want to turn this on?`,
+      `STEMM Lab would like to use ${permission.title.toLowerCase()} for app activities.`,
       [
-        {
-          text: 'Not Now',
-          style: 'cancel',
-        },
+        { text: 'Not Now', style: 'cancel' },
         {
           text: 'Allow',
-          onPress: () => {
-            updatePermission(permission.key, true);
-          },
+          onPress: () => updatePermission(permission.key, true),
         },
       ]
     );

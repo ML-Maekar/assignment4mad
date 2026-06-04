@@ -1,21 +1,23 @@
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Pressable,
-    StyleSheet,
-    Text,
-    View,
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
 
 import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
 import {
-    ActivityResultRecord,
-    deleteActivityResult,
-    getActivityResultsByActivity,
-    getAllActivityResults,
+  getFirestoreResultHistory,
+  getFirestoreResultsByActivity,
+} from '@/services/resultHistoryService';
+import {
+  ActivityResultRecord,
+  deleteActivityResult,
 } from '@/utils/activityResultsDb';
 
 type ActivityFilter = {
@@ -64,22 +66,22 @@ export default function ResultHistoryScreen() {
   );
   const [results, setResults] = useState<ActivityResultRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dataSource, setDataSource] = useState<'firestore' | 'sqlite'>('sqlite');
 
   const loadResults = useCallback(async () => {
     try {
       setLoading(true);
 
       if (selectedActivityKey) {
-        const activityResults =
-          await getActivityResultsByActivity(selectedActivityKey);
-        const sortedResults = [...activityResults].sort(
-          (a, b) =>
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
-        setResults(sortedResults);
+        const { results: fetchedResults, source } =
+          await getFirestoreResultsByActivity(selectedActivityKey);
+        setResults(fetchedResults);
+        setDataSource(source);
       } else {
-        const savedResults = await getAllActivityResults();
-        setResults(savedResults);
+        const { results: fetchedResults, source } =
+          await getFirestoreResultHistory();
+        setResults(fetchedResults);
+        setDataSource(source);
       }
     } catch (error) {
       console.log('Failed to load result history:', error);
@@ -155,6 +157,19 @@ export default function ResultHistoryScreen() {
         </Text>
         <Text style={[styles.subtitle, { color: colors.subtitle }]}>
           View saved attempts from newest to oldest.
+        </Text>
+        <Text
+          style={[
+            styles.sourceText,
+            {
+              color:
+                dataSource === 'firestore' ? colors.success : colors.subtitle,
+            },
+          ]}
+        >
+          {dataSource === 'firestore'
+            ? '● Synced from cloud'
+            : '● Showing local results'}
         </Text>
       </View>
 
@@ -386,6 +401,11 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 16,
     lineHeight: 22,
+  },
+  sourceText: {
+    marginTop: 6,
+    fontSize: 13,
+    fontWeight: '700',
   },
   filterCard: {
     borderWidth: 1,
