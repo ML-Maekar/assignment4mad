@@ -106,33 +106,31 @@ export default function HomeScreen() {
         </Text>
 
         <Pressable
-          onPress={() => router.push('/result-history' as never)}
-          style={({ pressed }) => [
-            styles.resultButton,
+            onPress={() => router.push('/result-history' as never)}
+            style={({ pressed }) => [
+            styles.resultOutlineButton,      // ← same as leaderboard
             {
-              backgroundColor: colors.tint,
+              backgroundColor: colors.card,  // ← same as leaderboard
               borderColor: colors.tint,
             },
             pressed && styles.tabPressed,
           ]}
         >
           <View style={styles.resultButtonTextContainer}>
-            <Text style={[styles.resultButtonTitle, { color: colors.buttonText }]}>
+            <Text style={[styles.resultButtonTitle, { color: colors.tint }]}>
               Result History
             </Text>
-
             <Text
               style={[
                 styles.resultButtonDescription,
-                { color: colors.buttonText },
+                { color: colors.subtitle },
               ]}
             >
               View all saved attempts from newest to oldest
             </Text>
           </View>
-
-          <Text style={[styles.resultArrow, { color: colors.buttonText }]}>
-            ›
+          <Text style={[styles.resultArrow, { color: colors.tint }]}>
+          ›
           </Text>
         </Pressable>
 
