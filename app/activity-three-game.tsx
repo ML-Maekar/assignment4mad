@@ -107,7 +107,10 @@ export default function ActivityThreeGame() {
 
   const [savedWriteUps, setSavedWriteUps] = useState<WriteUpRecord[]>([]);
   const [lastResult, setLastResult] = useState<Result | null>(null);
+  const [savedResultId, setSavedResultId] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  const latestWriteUp = savedWriteUps[0];
 
   const zoomInVideo = () => {
     setVideoZoom((currentZoom) => Math.min(currentZoom + 0.25, 3));
@@ -225,25 +228,70 @@ export default function ActivityThreeGame() {
 
     setSavedWriteUps((currentWriteUps) => [newWriteUp, ...currentWriteUps]);
 
+    setFanDesign('');
+    setPrediction('');
+    setDistanceCm('');
+    setBendAngleDegrees('');
+    setOutcomeDegrees('');
+    setObservationNotes('');
+    setWasPredictionCorrect('');
+
     Alert.alert('Write-Up Saved', `Design ${designNumber} write-up saved.`);
   };
 
   const calculateAndSaveResult = async () => {
-    const distanceValue = Number(distanceCm);
-    const bendAngleValue = Number(bendAngleDegrees);
+    if (savedResultId !== null) {
+      Alert.alert(
+        'Result Already Saved',
+        'This final result has already been saved. Press Clear Test to start a new result.'
+      );
+      return;
+    }
 
-    if (!fanDesign.trim()) {
-      Alert.alert('Missing Fan Design', 'Please enter the fan design.');
+    const finalFanDesign = fanDesign.trim() || latestWriteUp?.fanDesign || '';
+    const finalPrediction = prediction.trim() || latestWriteUp?.prediction || '';
+    const finalDistance = distanceCm.trim() || latestWriteUp?.distanceCm || '';
+    const finalBendAngle =
+      bendAngleDegrees.trim() || latestWriteUp?.bendAngleDegrees || '';
+    const finalOutcomeDegrees =
+      outcomeDegrees.trim() || latestWriteUp?.outcomeDegrees || '';
+    const finalObservationNotes =
+      observationNotes.trim() || latestWriteUp?.observationNotes || '';
+    const finalWasPredictionCorrect =
+      wasPredictionCorrect.trim() || latestWriteUp?.wasPredictionCorrect || '';
+
+    const distanceValue = Number(finalDistance);
+    const bendAngleValue = Number(finalBendAngle);
+
+    if (!finalFanDesign) {
+      Alert.alert(
+        'Missing Fan Design',
+        'Please save a write-up first or enter the fan design.'
+      );
+      return;
+    }
+
+    if (!finalPrediction) {
+      Alert.alert(
+        'Missing Prediction',
+        'Please save a write-up first or enter the prediction.'
+      );
       return;
     }
 
     if (Number.isNaN(distanceValue) || distanceValue <= 0) {
-      Alert.alert('Invalid Distance', 'Please enter the fan distance in cm.');
+      Alert.alert(
+        'Invalid Distance',
+        'Please enter the fan distance in cm, or save it in the Write Up tab.'
+      );
       return;
     }
 
     if (Number.isNaN(bendAngleValue) || bendAngleValue < 0) {
-      Alert.alert('Invalid Bend Angle', 'Please enter the bend angle in degrees.');
+      Alert.alert(
+        'Invalid Bend Angle',
+        'Please enter the bend angle in degrees, or save it in the Write Up tab.'
+      );
       return;
     }
 
@@ -264,13 +312,14 @@ export default function ActivityThreeGame() {
       const resultId = await saveActivityResult({
         activityKey: 'activity-three',
         activityTitle: 'Hand Fan Challenge',
-        label: `Design ${designNumber}: ${fanDesign.trim()}`,
+        label: `Design ${designNumber}: ${finalFanDesign}`,
         score: approximateForce,
         data: {
+          resultType: 'overall-test-result',
           tabLayout: 'Activity | Write Up | Discussion',
           designNumber,
-          fanDesign: fanDesign.trim(),
-          prediction: prediction.trim(),
+          fanDesign: finalFanDesign,
+          prediction: finalPrediction,
           targetMaterial: selectedMaterial.label,
           thicknessMm: selectedMaterial.thicknessMm,
           stiffness: selectedMaterial.stiffness,
@@ -279,23 +328,21 @@ export default function ActivityThreeGame() {
           bendAngleDegrees: bendAngleValue,
           bendAngleRadians,
           approximateForce,
-          outcomeDegrees: outcomeDegrees.trim(),
-          observationNotes: observationNotes.trim(),
-          wasPredictionCorrect: wasPredictionCorrect.trim(),
+          outcomeDegrees: finalOutcomeDegrees,
+          observationNotes: finalObservationNotes,
+          wasPredictionCorrect: finalWasPredictionCorrect,
           savedWriteUps,
           photoUri,
           videoUri,
           playbackRate,
           videoZoom,
           formula: 'F ≈ k × θ',
-          optionalChallenge:
-            'Estimate stiffness coefficient k using material stiffness and bend angle.',
         },
       });
 
       const savedResult: Result = {
         id: resultId,
-        fanDesign: fanDesign.trim(),
+        fanDesign: finalFanDesign,
         targetMaterial: selectedMaterial.label,
         thicknessMm: selectedMaterial.thicknessMm,
         stiffness: selectedMaterial.stiffness,
@@ -305,11 +352,14 @@ export default function ActivityThreeGame() {
         approximateForce,
       };
 
+      setSavedResultId(resultId);
       setLastResult(savedResult);
 
       Alert.alert(
-        'Result Saved',
-        `Approximate Force: ${approximateForce.toFixed(3)} N`
+        'Overall Result Saved',
+        `Saved to Result History.\nApproximate Force: ${approximateForce.toFixed(
+          3
+        )} N`
       );
     } catch (error) {
       console.log('Failed to save Activity 3 result:', error);
@@ -333,7 +383,9 @@ export default function ActivityThreeGame() {
     setVideoUri(null);
     setPlaybackRate(1);
     setVideoZoom(1);
+    setSavedWriteUps([]);
     setLastResult(null);
+    setSavedResultId(null);
     setActiveTab('activity');
   };
 
@@ -563,6 +615,11 @@ export default function ActivityThreeGame() {
     >
       <Text style={[styles.cardTitle, { color: colors.text }]}>Write Up</Text>
 
+      <Text style={[styles.body, { color: colors.subtitle }]}>
+        Save one write-up for each design. After saving, the boxes clear so the
+        same design is not saved twice.
+      </Text>
+
       <Text style={[styles.label, { color: colors.text }]}>Design Number</Text>
 
       <View style={styles.optionRow}>
@@ -772,6 +829,18 @@ export default function ActivityThreeGame() {
         </Text>
       </View>
 
+      {latestWriteUp && (
+        <View style={[styles.resultBox, { borderColor: colors.border }]}>
+          <Text style={[styles.resultTitle, { color: colors.text }]}>
+            Latest Saved Write-Up Used for Result
+          </Text>
+
+          <Text style={[styles.body, { color: colors.subtitle }]}>
+            Design {latestWriteUp.designNumber}: {latestWriteUp.fanDesign}
+          </Text>
+        </View>
+      )}
+
       <Text style={[styles.label, { color: colors.text }]}>
         Target Material Being Bent
       </Text>
@@ -805,7 +874,8 @@ export default function ActivityThreeGame() {
               </Text>
 
               <Text style={[styles.smallInfo, { color: colors.subtitle }]}>
-                Thickness: {material.thicknessMm} mm | k = {material.stiffness} N/rad
+                Thickness: {material.thicknessMm} mm | k = {material.stiffness}{' '}
+                N/rad
               </Text>
 
               <Text style={[styles.smallInfo, { color: colors.subtitle }]}>
@@ -816,19 +886,25 @@ export default function ActivityThreeGame() {
         })}
       </View>
 
-      <Pressable
-        onPress={calculateAndSaveResult}
-        disabled={isSaving}
-        style={({ pressed }) => [
-          styles.button,
-          { backgroundColor: colors.tint },
-          pressed && styles.buttonPressed,
-        ]}
-      >
-        <Text style={[styles.buttonText, { color: colors.buttonText }]}>
-          {isSaving ? 'Saving...' : 'Calculate and Save'}
+      {savedResultId === null ? (
+        <Pressable
+          onPress={calculateAndSaveResult}
+          disabled={isSaving}
+          style={({ pressed }) => [
+            styles.button,
+            { backgroundColor: colors.tint },
+            pressed && styles.buttonPressed,
+          ]}
+        >
+          <Text style={[styles.buttonText, { color: colors.buttonText }]}>
+            {isSaving ? 'Saving...' : 'Calculate and Save Overall Result'}
+          </Text>
+        </Pressable>
+      ) : (
+        <Text style={[styles.savedText, { color: colors.success }]}>
+          Overall result saved to Result History.
         </Text>
-      </Pressable>
+      )}
 
       {lastResult && (
         <View style={[styles.resultBox, { borderColor: colors.border }]}>
@@ -842,14 +918,6 @@ export default function ActivityThreeGame() {
 
           <Text style={[styles.body, { color: colors.subtitle }]}>
             Target Material: {lastResult.targetMaterial}
-          </Text>
-
-          <Text style={[styles.body, { color: colors.subtitle }]}>
-            Thickness: {lastResult.thicknessMm} mm
-          </Text>
-
-          <Text style={[styles.body, { color: colors.subtitle }]}>
-            Stiffness k: {lastResult.stiffness} N/rad
           </Text>
 
           <Text style={[styles.body, { color: colors.subtitle }]}>
@@ -906,8 +974,7 @@ export default function ActivityThreeGame() {
         </Text>
 
         <Text style={[styles.subtitle, { color: colors.subtitle }]}>
-          Record the fan setup, complete the write-up, and calculate approximate
-          force.
+          Save write-ups, record evidence, and save one overall result.
         </Text>
       </View>
 
@@ -919,18 +986,9 @@ export default function ActivityThreeGame() {
 }
 
 const styles = StyleSheet.create({
-  header: {
-    marginBottom: 20,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '900',
-  },
-  subtitle: {
-    marginTop: 8,
-    fontSize: 16,
-    lineHeight: 22,
-  },
+  header: { marginBottom: 20 },
+  title: { fontSize: 32, fontWeight: '900' },
+  subtitle: { marginTop: 8, fontSize: 16, lineHeight: 22 },
   phoneLayoutCard: {
     borderWidth: 2,
     borderRadius: 24,
@@ -938,19 +996,9 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     minHeight: 620,
   },
-  recordHeader: {
-    alignItems: 'flex-end',
-    marginBottom: 16,
-  },
-  recordText: {
-    fontSize: 24,
-    fontWeight: '500',
-  },
-  demoImage: {
-    width: '100%',
-    height: 260,
-    marginBottom: 18,
-  },
+  recordHeader: { alignItems: 'flex-end', marginBottom: 16 },
+  recordText: { fontSize: 24, fontWeight: '500' },
+  demoImage: { width: '100%', height: 260, marginBottom: 18 },
   photo: {
     width: '100%',
     height: 220,
@@ -971,24 +1019,10 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
     borderBottomWidth: 2,
   },
-  bottomTabText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  cardTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    marginBottom: 12,
-  },
-  label: {
-    fontSize: 15,
-    fontWeight: '800',
-    marginBottom: 8,
-  },
-  body: {
-    fontSize: 15,
-    lineHeight: 22,
-  },
+  bottomTabText: { fontSize: 13, fontWeight: '700' },
+  cardTitle: { fontSize: 20, fontWeight: '900', marginBottom: 12 },
+  label: { fontSize: 15, fontWeight: '800', marginBottom: 8 },
+  body: { fontSize: 15, lineHeight: 22 },
   input: {
     borderWidth: 1,
     borderRadius: 14,
@@ -996,20 +1030,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     marginBottom: 12,
   },
-  multilineInput: {
-    minHeight: 90,
-    textAlignVertical: 'top',
-  },
-  optionRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginBottom: 14,
-  },
-  optionGrid: {
-    gap: 10,
-    marginBottom: 14,
-  },
+  multilineInput: { minHeight: 90, textAlignVertical: 'top' },
+  optionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 14 },
+  optionGrid: { gap: 10, marginBottom: 14 },
   smallChoice: {
     width: 58,
     minHeight: 46,
@@ -1018,15 +1041,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  materialButton: {
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 12,
-  },
-  optionText: {
-    fontSize: 14,
-    fontWeight: '900',
-  },
+  materialButton: { borderWidth: 1, borderRadius: 14, padding: 12 },
+  optionText: { fontSize: 14, fontWeight: '900' },
   smallInfo: {
     marginTop: 4,
     fontSize: 12,
@@ -1055,10 +1071,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  smallButtonText: {
-    fontSize: 13,
-    fontWeight: '900',
-  },
+  smallButtonText: { fontSize: 13, fontWeight: '900' },
   videoFrame: {
     width: '100%',
     height: 230,
@@ -1066,26 +1079,15 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: 12,
   },
-  video: {
-    width: '100%',
-    height: 230,
-  },
-  speedRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 12,
-  },
+  video: { width: '100%', height: 230 },
+  speedRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   speedButton: {
     borderWidth: 1,
     borderRadius: 12,
     paddingVertical: 8,
     paddingHorizontal: 12,
   },
-  speedText: {
-    fontSize: 13,
-    fontWeight: '900',
-  },
+  speedText: { fontSize: 13, fontWeight: '900' },
   formulaBox: {
     borderWidth: 1,
     borderRadius: 16,
@@ -1108,31 +1110,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 10,
   },
-  buttonPressed: {
-    transform: [{ scale: 0.98 }],
-    opacity: 0.85,
-  },
-  buttonText: {
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  secondaryButtonText: {
+  buttonPressed: { transform: [{ scale: 0.98 }], opacity: 0.85 },
+  buttonText: { fontSize: 16, fontWeight: '900' },
+  secondaryButtonText: { fontSize: 15, fontWeight: '900' },
+  savedText: {
     fontSize: 15,
     fontWeight: '900',
+    textAlign: 'center',
+    marginTop: 12,
   },
   resultBox: {
     borderTopWidth: 1,
     paddingTop: 12,
     marginTop: 14,
   },
-  resultTitle: {
-    fontSize: 16,
-    fontWeight: '900',
-    marginBottom: 4,
-  },
-  score: {
-    marginTop: 4,
-    fontSize: 15,
-    fontWeight: '900',
-  },
+  resultTitle: { fontSize: 16, fontWeight: '900', marginBottom: 4 },
+  score: { marginTop: 4, fontSize: 15, fontWeight: '900' },
 });
