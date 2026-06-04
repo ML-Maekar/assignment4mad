@@ -16,6 +16,7 @@ import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { saveAttempt } from '@/services/attemptService';
+import { savePhotoEvidence, saveVideoEvidence } from '@/services/videoStorageService';
 import { scheduleActivityCompleteNotification } from '@/utils/notifications';
 
 const FAN_DEMO_IMAGE = require('../assets/images/activity 3.png');
@@ -72,11 +73,15 @@ function degreesToRadians(degrees: number) {
 
 export default function ActivityThreeGame() {
   const { colors } = useAppTheme();
-  const { cameraGranted } = usePermissions();
+  // FIX: destructure both cameraGranted AND mediaLibraryGranted.
+  // Choose Photo and Choose Video must check mediaLibraryGranted (gallery access),
+  // not cameraGranted (camera capture).
+  const { cameraGranted, mediaLibraryGranted } = usePermissions();
 
   const [activeTab, setActiveTab] = useState<TabKey>('activity');
 
   const [designNumber, setDesignNumber] = useState(1);
+  // Shared fan design field — persists across tabs. DO NOT clear inside saveWriteUp().
   const [fanDesign, setFanDesign] = useState('');
   const [prediction, setPrediction] = useState('');
   const [selectedMaterial, setSelectedMaterial] = useState(TARGET_MATERIALS[0]);
@@ -89,9 +94,12 @@ export default function ActivityThreeGame() {
   const [surprises, setSurprises] = useState('');
 
   const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [photoFirebaseUrl, setPhotoFirebaseUrl] = useState<string | null>(null);
   const [videoUri, setVideoUri] = useState<string | null>(null);
+  const [videoFirebaseUrl, setVideoFirebaseUrl] = useState<string | null>(null);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [videoZoom, setVideoZoom] = useState(1);
+  const [isSavingMedia, setIsSavingMedia] = useState(false);
 
   const [savedWriteUps, setSavedWriteUps] = useState<WriteUpRecord[]>([]);
   const [writeUpSavedFlash, setWriteUpSavedFlash] = useState(false);
@@ -102,6 +110,40 @@ export default function ActivityThreeGame() {
   const zoomInVideo = () => setVideoZoom((z) => Math.min(z + 0.25, 3));
   const zoomOutVideo = () => setVideoZoom((z) => Math.max(z - 0.25, 1));
   const resetVideoZoom = () => setVideoZoom(1);
+
+  // After taking a photo: save to gallery + upload to Firebase Storage
+  const handlePostPhotoSave = async (uri: string) => {
+    setIsSavingMedia(true);
+    try {
+      const { firebaseUrl } = await savePhotoEvidence({
+        localUri: uri,
+        activityKey: ACTIVITY_KEY,
+        mediaLibraryGranted,
+      });
+      if (firebaseUrl) setPhotoFirebaseUrl(firebaseUrl);
+    } catch {
+      // Silent fail — photo is still visible from local URI
+    } finally {
+      setIsSavingMedia(false);
+    }
+  };
+
+  // After recording a video: save to gallery + upload to Firebase Storage
+  const handlePostVideoSave = async (uri: string) => {
+    setIsSavingMedia(true);
+    try {
+      const { firebaseUrl } = await saveVideoEvidence({
+        localUri: uri,
+        activityKey: ACTIVITY_KEY,
+        mediaLibraryGranted,
+      });
+      if (firebaseUrl) setVideoFirebaseUrl(firebaseUrl);
+    } catch {
+      // Silent fail — video is still usable from local URI
+    } finally {
+      setIsSavingMedia(false);
+    }
+  };
 
   const takePhotoEvidence = async () => {
     if (!cameraGranted) {
@@ -116,14 +158,21 @@ export default function ActivityThreeGame() {
       allowsEditing: false,
       quality: 1,
     });
-    if (!result.canceled) setPhotoUri(result.assets[0].uri);
+    if (!result.canceled) {
+      const uri = result.assets[0].uri;
+      setPhotoUri(uri);
+      setPhotoFirebaseUrl(null);
+      handlePostPhotoSave(uri);
+    }
   };
 
+  // FIX: choosePhotoEvidence now checks mediaLibraryGranted (gallery access),
+  // not cameraGranted.
   const choosePhotoEvidence = async () => {
-    if (!cameraGranted) {
+    if (!mediaLibraryGranted) {
       Alert.alert(
-        'Camera Disabled',
-        'Camera is turned off in Settings. Go to Settings → Permissions → Camera to enable it.'
+        'Media Storage Disabled',
+        'Media Storage is turned off in Settings. Go to Settings → Permissions → Media Storage to enable it.'
       );
       return;
     }
@@ -132,7 +181,10 @@ export default function ActivityThreeGame() {
       allowsEditing: false,
       quality: 1,
     });
-    if (!result.canceled) setPhotoUri(result.assets[0].uri);
+    if (!result.canceled) {
+      setPhotoUri(result.assets[0].uri);
+      setPhotoFirebaseUrl(null);
+    }
   };
 
   const recordVideoEvidence = async () => {
@@ -150,16 +202,21 @@ export default function ActivityThreeGame() {
       videoMaxDuration: 30,
     });
     if (!result.canceled) {
-      setVideoUri(result.assets[0].uri);
+      const uri = result.assets[0].uri;
+      setVideoUri(uri);
+      setVideoFirebaseUrl(null);
       setVideoZoom(1);
+      handlePostVideoSave(uri);
     }
   };
 
+  // FIX: chooseVideoEvidence now checks mediaLibraryGranted (gallery access),
+  // not cameraGranted.
   const chooseVideoEvidence = async () => {
-    if (!cameraGranted) {
+    if (!mediaLibraryGranted) {
       Alert.alert(
-        'Camera Disabled',
-        'Camera is turned off in Settings. Go to Settings → Permissions → Camera to enable it.'
+        'Media Storage Disabled',
+        'Media Storage is turned off in Settings. Go to Settings → Permissions → Media Storage to enable it.'
       );
       return;
     }
@@ -170,6 +227,7 @@ export default function ActivityThreeGame() {
     });
     if (!result.canceled) {
       setVideoUri(result.assets[0].uri);
+      setVideoFirebaseUrl(null);
       setVideoZoom(1);
     }
   };
@@ -199,8 +257,11 @@ export default function ActivityThreeGame() {
 
     setSavedWriteUps((current) => [newWriteUp, ...current]);
 
-    // Clear all write-up fields after saving
-    setFanDesign('');
+    // FIX: Do NOT clear fanDesign here. The fan design field is shared between
+    // the Write Up tab and the Discussion tab's Calculate and Save button.
+    // Clearing it inside saveWriteUp() was the root cause of the
+    // "Missing Fan Design" alert firing even when the user had filled it in.
+    // Only clear the other write-up-specific fields.
     setPrediction('');
     setDistanceCm('');
     setBendAngleDegrees('');
@@ -266,8 +327,11 @@ export default function ActivityThreeGame() {
           wasPredictionCorrect: wasPredictionCorrect.trim(),
           surprises: surprises.trim(),
           savedWriteUps,
+          // Local URIs + Firebase Storage URLs for both photo and video
           photoUri,
+          photoFirebaseUrl,
           videoUri,
+          videoFirebaseUrl,
           playbackRate,
           videoZoom,
           formula: 'F ≈ k × θ',
@@ -323,7 +387,9 @@ export default function ActivityThreeGame() {
     setWasPredictionCorrect('');
     setSurprises('');
     setPhotoUri(null);
+    setPhotoFirebaseUrl(null);
     setVideoUri(null);
+    setVideoFirebaseUrl(null);
     setPlaybackRate(1);
     setVideoZoom(1);
     setLastResult(null);
@@ -364,11 +430,18 @@ export default function ActivityThreeGame() {
   const renderActivityTab = () => (
     <View style={[styles.phoneLayoutCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
 
-      {/* Camera permission warning banner */}
       {!cameraGranted && (
         <View style={[styles.warningBanner, { backgroundColor: `${colors.danger}15`, borderColor: colors.danger }]}>
           <Text style={[styles.warningText, { color: colors.danger }]}>
             ⚠️ Camera is disabled. Go to Settings → Permissions → Camera to enable photos and video.
+          </Text>
+        </View>
+      )}
+
+      {!mediaLibraryGranted && (
+        <View style={[styles.warningBanner, { backgroundColor: `${colors.warning}15`, borderColor: colors.warning }]}>
+          <Text style={[styles.warningText, { color: colors.warning }]}>
+            ⚠️ Media Storage is disabled. Go to Settings → Permissions → Media Storage to save media to your gallery.
           </Text>
         </View>
       )}
@@ -413,22 +486,30 @@ export default function ActivityThreeGame() {
           </Text>
         </Pressable>
 
+        {/* FIX: Choose Photo checks mediaLibraryGranted, not cameraGranted */}
         <Pressable
           onPress={choosePhotoEvidence}
           style={({ pressed }) => [
             styles.smallOutlineButton,
-            { borderColor: cameraGranted ? colors.tint : colors.subtitle },
+            { borderColor: mediaLibraryGranted ? colors.tint : colors.subtitle },
             pressed && styles.buttonPressed,
           ]}
         >
-          <Text style={[styles.smallButtonText, { color: cameraGranted ? colors.tint : colors.subtitle }]}>
-            {cameraGranted ? 'Choose Photo' : 'Camera Off'}
+          <Text style={[styles.smallButtonText, { color: mediaLibraryGranted ? colors.tint : colors.subtitle }]}>
+            {mediaLibraryGranted ? 'Choose Photo' : 'Media Off'}
           </Text>
         </Pressable>
       </View>
 
       {photoUri ? (
-        <Image source={{ uri: photoUri }} style={styles.photo} resizeMode="cover" />
+        <>
+          <Image source={{ uri: photoUri }} style={styles.photo} resizeMode="cover" />
+          {photoFirebaseUrl && (
+            <Text style={[styles.body, { color: colors.success, marginBottom: 8 }]}>
+              ☁️ Photo backed up to cloud storage.
+            </Text>
+          )}
+        </>
       ) : (
         <Text style={[styles.body, { color: colors.subtitle }]}>
           Add a photo of the fan, upright material, and phone position.
@@ -450,19 +531,26 @@ export default function ActivityThreeGame() {
           </Text>
         </Pressable>
 
+        {/* FIX: Choose Video checks mediaLibraryGranted, not cameraGranted */}
         <Pressable
           onPress={chooseVideoEvidence}
           style={({ pressed }) => [
             styles.smallOutlineButton,
-            { borderColor: cameraGranted ? colors.tint : colors.subtitle },
+            { borderColor: mediaLibraryGranted ? colors.tint : colors.subtitle },
             pressed && styles.buttonPressed,
           ]}
         >
-          <Text style={[styles.smallButtonText, { color: cameraGranted ? colors.tint : colors.subtitle }]}>
-            {cameraGranted ? 'Choose Video' : 'Camera Off'}
+          <Text style={[styles.smallButtonText, { color: mediaLibraryGranted ? colors.tint : colors.subtitle }]}>
+            {mediaLibraryGranted ? 'Choose Video' : 'Media Off'}
           </Text>
         </Pressable>
       </View>
+
+      {isSavingMedia && (
+        <Text style={[styles.body, { color: colors.subtitle, marginBottom: 8 }]}>
+          💾 Saving media to gallery…
+        </Text>
+      )}
 
       {videoUri ? (
         <>
@@ -476,6 +564,12 @@ export default function ActivityThreeGame() {
               shouldPlay={false}
             />
           </View>
+
+          {videoFirebaseUrl && (
+            <Text style={[styles.body, { color: colors.success, marginBottom: 8 }]}>
+              ☁️ Video backed up to cloud storage.
+            </Text>
+          )}
 
           <Text style={[styles.label, { color: colors.text }]}>Playback Speed</Text>
           <View style={styles.speedRow}>
@@ -550,6 +644,7 @@ export default function ActivityThreeGame() {
         })}
       </View>
 
+      {/* Fan design field is shared — also used by Discussion tab's Calculate and Save */}
       <TextInput value={fanDesign} onChangeText={setFanDesign} placeholder="Fan design, e.g. 1 cm back-and-forward folds" placeholderTextColor={colors.subtitle} style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]} />
       <TextInput value={prediction} onChangeText={setPrediction} placeholder="Predict which fan design moves the paper most" placeholderTextColor={colors.subtitle} multiline style={[styles.input, styles.multilineInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]} />
 

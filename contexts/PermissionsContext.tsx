@@ -1,29 +1,32 @@
 import React, {
-    createContext,
-    useCallback,
-    useContext,
-    useEffect,
-    useState,
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
 } from 'react';
 
 import {
-    isBatteryPermissionGranted,
-    isCameraPermissionGranted,
-    isMicPermissionGranted,
-    isMotionPermissionGranted,
-    requestCameraPermission,
-    requestMicPermission,
-    requestMotionPermission,
-    revokeCameraPermission,
-    revokeMicPermission,
-    revokeMotionPermission,
-    setBatteryPermissionGranted,
+  isBatteryPermissionGranted,
+  isCameraPermissionGranted,
+  isMediaLibraryPermissionGranted,
+  isMicPermissionGranted,
+  isMotionPermissionGranted,
+  requestCameraPermission,
+  requestMediaLibraryPermission,
+  requestMicPermission,
+  requestMotionPermission,
+  revokeCameraPermission,
+  revokeMediaLibraryPermission,
+  revokeMicPermission,
+  revokeMotionPermission,
+  setBatteryPermissionGranted,
 } from '@/utils/permissionService';
 
 import {
-    isLocationPermissionGranted,
-    requestLocationPermission,
-    revokeLocationPermission,
+  isLocationPermissionGranted,
+  requestLocationPermission,
+  revokeLocationPermission,
 } from '@/utils/locationService';
 
 type PermissionsState = {
@@ -32,11 +35,13 @@ type PermissionsState = {
   cameraGranted: boolean;
   micGranted: boolean;
   locationGranted: boolean;
+  mediaLibraryGranted: boolean;
   loadingPermissions: boolean;
   askForMotion: () => Promise<boolean>;
   askForCamera: () => Promise<boolean>;
   askForMic: () => Promise<boolean>;
   askForLocation: () => Promise<boolean>;
+  askForMediaLibrary: () => Promise<boolean>;
   enableMotionFromSettings: () => Promise<boolean>;
   disableMotionFromSettings: () => Promise<void>;
   enableBattery: () => Promise<void>;
@@ -47,6 +52,8 @@ type PermissionsState = {
   disableMicFromSettings: () => Promise<void>;
   enableLocationFromSettings: () => Promise<boolean>;
   disableLocationFromSettings: () => Promise<void>;
+  enableMediaLibraryFromSettings: () => Promise<boolean>;
+  disableMediaLibraryFromSettings: () => Promise<void>;
   refreshPermissions: () => Promise<void>;
 };
 
@@ -56,11 +63,13 @@ const PermissionsContext = createContext<PermissionsState>({
   cameraGranted: false,
   micGranted: false,
   locationGranted: false,
+  mediaLibraryGranted: false,
   loadingPermissions: true,
   askForMotion: async () => false,
   askForCamera: async () => false,
   askForMic: async () => false,
   askForLocation: async () => false,
+  askForMediaLibrary: async () => false,
   enableMotionFromSettings: async () => false,
   disableMotionFromSettings: async () => {},
   enableBattery: async () => {},
@@ -71,6 +80,8 @@ const PermissionsContext = createContext<PermissionsState>({
   disableMicFromSettings: async () => {},
   enableLocationFromSettings: async () => false,
   disableLocationFromSettings: async () => {},
+  enableMediaLibraryFromSettings: async () => false,
+  disableMediaLibraryFromSettings: async () => {},
   refreshPermissions: async () => {},
 });
 
@@ -84,16 +95,18 @@ export function PermissionsProvider({
   const [cameraGranted, setCameraGranted] = useState(false);
   const [micGranted, setMicGranted] = useState(false);
   const [locationGranted, setLocationGranted] = useState(false);
+  const [mediaLibraryGranted, setMediaLibraryGranted] = useState(false);
   const [loadingPermissions, setLoadingPermissions] = useState(true);
 
   const refreshPermissions = useCallback(async () => {
     try {
-      const [motion, battery, camera, mic, location] = await Promise.all([
+      const [motion, battery, camera, mic, location, mediaLibrary] = await Promise.all([
         isMotionPermissionGranted(),
         isBatteryPermissionGranted(),
         isCameraPermissionGranted(),
         isMicPermissionGranted(),
         isLocationPermissionGranted(),
+        isMediaLibraryPermissionGranted(),
       ]);
 
       setMotionGranted(motion);
@@ -101,6 +114,7 @@ export function PermissionsProvider({
       setCameraGranted(camera);
       setMicGranted(mic);
       setLocationGranted(location);
+      setMediaLibraryGranted(mediaLibrary);
     } catch (error) {
       console.log('Failed to refresh permissions:', error);
     } finally {
@@ -195,6 +209,26 @@ export function PermissionsProvider({
     setLocationGranted(false);
   }, []);
 
+  // ─── Media Library ────────────────────────────────────────────
+  // Used by Activities 1 & 3: save recorded videos to gallery,
+  // pick existing videos/photos, and enable Firebase Storage upload.
+  const askForMediaLibrary = useCallback(async () => {
+    const granted = await requestMediaLibraryPermission();
+    setMediaLibraryGranted(granted);
+    return granted;
+  }, []);
+
+  const enableMediaLibraryFromSettings = useCallback(async () => {
+    const granted = await requestMediaLibraryPermission();
+    setMediaLibraryGranted(granted);
+    return granted;
+  }, []);
+
+  const disableMediaLibraryFromSettings = useCallback(async () => {
+    await revokeMediaLibraryPermission();
+    setMediaLibraryGranted(false);
+  }, []);
+
   return (
     <PermissionsContext.Provider
       value={{
@@ -203,11 +237,13 @@ export function PermissionsProvider({
         cameraGranted,
         micGranted,
         locationGranted,
+        mediaLibraryGranted,
         loadingPermissions,
         askForMotion,
         askForCamera,
         askForMic,
         askForLocation,
+        askForMediaLibrary,
         enableMotionFromSettings,
         disableMotionFromSettings,
         enableBattery,
@@ -218,6 +254,8 @@ export function PermissionsProvider({
         disableMicFromSettings,
         enableLocationFromSettings,
         disableLocationFromSettings,
+        enableMediaLibraryFromSettings,
+        disableMediaLibraryFromSettings,
         refreshPermissions,
       }}
     >

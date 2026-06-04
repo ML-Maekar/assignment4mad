@@ -1,15 +1,15 @@
 import {
-    collection,
-    getDocs,
-    orderBy,
-    query,
-    where,
+  collection,
+  getDocs,
+  orderBy,
+  query,
+  where,
 } from 'firebase/firestore';
 
 import {
-    ActivityResultRecord,
-    getActivityResultsByActivity,
-    getAllActivityResults,
+  ActivityResultRecord,
+  getActivityResultsByActivity,
+  getAllActivityResults,
 } from '../utils/activityResultsDb';
 import { db } from './firebase';
 

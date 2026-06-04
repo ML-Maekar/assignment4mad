@@ -6,6 +6,7 @@ import {
 } from '@/contexts/AppThemeContext';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { PermissionsProvider } from '@/contexts/PermissionsContext';
+import { registerBackgroundSync } from '@/utils/backgroundSync';
 import {
   DarkTheme,
   DefaultTheme,
@@ -13,11 +14,18 @@ import {
 } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React from 'react';
+import React, { useEffect } from 'react';
 import 'react-native-reanimated';
 
 function RootLayoutContent() {
   const { activeTheme, colors } = useAppTheme();
+
+  // Register the background sync task once when the app launches.
+  // Safe to call multiple times — registerBackgroundSync checks if
+  // the task is already registered before doing anything.
+  useEffect(() => {
+    registerBackgroundSync();
+  }, []);
 
   return (
     <NavigationThemeProvider
@@ -163,12 +171,12 @@ function RootLayoutContent() {
 
 export default function RootLayout() {
   return (
-  <AuthProvider>
-    <PermissionsProvider>
-      <AppThemeProvider>
-        <RootLayoutContent />
-      </AppThemeProvider>
-    </PermissionsProvider>
-  </AuthProvider>
-);
+    <AuthProvider>
+      <PermissionsProvider>
+        <AppThemeProvider>
+          <RootLayoutContent />
+        </AppThemeProvider>
+      </PermissionsProvider>
+    </AuthProvider>
+  );
 }

@@ -16,6 +16,7 @@ import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { saveAttempt } from '@/services/attemptService';
+import { saveVideoEvidence } from '@/services/videoStorageService';
 import { scheduleActivityCompleteNotification } from '@/utils/notifications';
 import {
   getLocalTeamProfile,
@@ -75,7 +76,10 @@ function getSafetyMessage(gForce: number | null) {
 
 export default function ActivityOneGame() {
   const { colors } = useAppTheme();
-  const { cameraGranted } = usePermissions();
+  // FIX: destructure both cameraGranted AND mediaLibraryGranted from context.
+  // Previously chooseVideoEvidence was incorrectly checking cameraGranted
+  // for a gallery-pick operation — it must check mediaLibraryGranted.
+  const { cameraGranted, mediaLibraryGranted } = usePermissions();
 
   const [activeTab, setActiveTab] = useState<TabKey>('activity');
   const [studentLevel, setStudentLevel] = useState<StudentLevel>('primary');
@@ -85,6 +89,8 @@ export default function ActivityOneGame() {
   const [prototypeNumber, setPrototypeNumber] = useState(1);
   const [bounceType, setBounceType] = useState<BounceType>('no-bounce');
 
+  // Shared design name field — persists across tabs so Write Up and Activity
+  // tabs always show the same value. DO NOT clear it inside saveWriteUp().
   const [designName, setDesignName] = useState('');
   const [prediction, setPrediction] = useState('');
   const [designNotes, setDesignNotes] = useState('');
@@ -100,8 +106,11 @@ export default function ActivityOneGame() {
   const [reboundTime, setReboundTime] = useState('');
 
   const [videoUri, setVideoUri] = useState<string | null>(null);
+  // Tracks the Firebase Storage URL after upload (null until uploaded)
+  const [videoFirebaseUrl, setVideoFirebaseUrl] = useState<string | null>(null);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [videoZoom, setVideoZoom] = useState(1);
+  const [isSavingVideo, setIsSavingVideo] = useState(false);
 
   const [savedWriteUps, setSavedWriteUps] = useState<WriteUpRecord[]>([]);
   const [writeUpSavedFlash, setWriteUpSavedFlash] = useState(false);
@@ -122,6 +131,25 @@ export default function ActivityOneGame() {
   const zoomOutVideo = () => setVideoZoom((z) => Math.max(z - 0.25, 1));
   const resetVideoZoom = () => setVideoZoom(1);
 
+  // After recording: save to device gallery (if mediaLibraryGranted) and
+  // upload to Firebase Storage. Both are best-effort — the local URI is
+  // always kept in state so the video player still works even if saving fails.
+  const handlePostRecordSave = async (uri: string) => {
+    setIsSavingVideo(true);
+    try {
+      const { firebaseUrl } = await saveVideoEvidence({
+        localUri: uri,
+        activityKey: ACTIVITY_KEY,
+        mediaLibraryGranted,
+      });
+      if (firebaseUrl) setVideoFirebaseUrl(firebaseUrl);
+    } catch {
+      // Silently fail — video is still usable from the local URI
+    } finally {
+      setIsSavingVideo(false);
+    }
+  };
+
   const recordVideoEvidence = async () => {
     if (!cameraGranted) {
       Alert.alert(
@@ -137,16 +165,22 @@ export default function ActivityOneGame() {
       videoMaxDuration: 45,
     });
     if (!result.canceled) {
-      setVideoUri(result.assets[0].uri);
+      const uri = result.assets[0].uri;
+      setVideoUri(uri);
+      setVideoFirebaseUrl(null);
       setVideoZoom(1);
+      // Save to gallery + Firebase in the background
+      handlePostRecordSave(uri);
     }
   };
 
+  // FIX: now correctly checks mediaLibraryGranted (not cameraGranted) because
+  // choosing from the gallery requires Media Library permission, not Camera.
   const chooseVideoEvidence = async () => {
-    if (!cameraGranted) {
+    if (!mediaLibraryGranted) {
       Alert.alert(
-        'Camera Disabled',
-        'Camera is turned off in Settings. Go to Settings → Permissions → Camera to enable it.'
+        'Media Storage Disabled',
+        'Media Storage is turned off in Settings. Go to Settings → Permissions → Media Storage to enable it.'
       );
       return;
     }
@@ -157,6 +191,7 @@ export default function ActivityOneGame() {
     });
     if (!result.canceled) {
       setVideoUri(result.assets[0].uri);
+      setVideoFirebaseUrl(null);
       setVideoZoom(1);
     }
   };
@@ -192,8 +227,11 @@ export default function ActivityOneGame() {
 
     setSavedWriteUps((current) => [newWriteUp, ...current]);
 
-    // Clear all write-up fields after saving
-    setDesignName('');
+    // FIX: Do NOT clear designName here. The design name field is shared
+    // between the Write Up tab and the Activity/Discussion tabs. Clearing it
+    // after saveWriteUp() caused the "Missing Design Name" alert to fire on
+    // the Calculate and Save button even though the user had already filled it in.
+    // Only clear the other write-up-specific fields.
     setPrediction('');
     setDesignNotes('');
     setPredictedTime('');
@@ -304,7 +342,9 @@ export default function ActivityOneGame() {
           reboundTimeSeconds: studentLevel === 'high' && bounceType === 'bounce' ? reboundTimeValue : null,
           gForce,
           safetyMessage,
+          // Include both the local URI and the Firebase Storage URL
           videoUri,
+          videoFirebaseUrl,
           playbackRate,
           videoZoom,
         },
@@ -363,6 +403,7 @@ export default function ActivityOneGame() {
     setToyMass('');
     setReboundTime('');
     setVideoUri(null);
+    setVideoFirebaseUrl(null);
     setPlaybackRate(1);
     setVideoZoom(1);
     setLastResult(null);
@@ -410,6 +451,14 @@ export default function ActivityOneGame() {
         </View>
       )}
 
+      {!mediaLibraryGranted && (
+        <View style={[styles.warningBanner, { backgroundColor: `${colors.warning}15`, borderColor: colors.warning }]}>
+          <Text style={[styles.warningText, { color: colors.warning }]}>
+            ⚠️ Media Storage is disabled. Go to Settings → Permissions → Media Storage to save videos to your gallery.
+          </Text>
+        </View>
+      )}
+
       <Text style={[styles.cardTitle, { color: colors.text }]}>Instructions</Text>
 
       <View style={[styles.instructionBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
@@ -449,19 +498,32 @@ export default function ActivityOneGame() {
           </Text>
         </Pressable>
 
+        {/* FIX: Choose Video now checks mediaLibraryGranted, not cameraGranted */}
         <Pressable
           onPress={chooseVideoEvidence}
           style={({ pressed }) => [
             styles.smallOutlineButton,
-            { borderColor: cameraGranted ? colors.tint : colors.subtitle },
+            { borderColor: mediaLibraryGranted ? colors.tint : colors.subtitle },
             pressed && styles.buttonPressed,
           ]}
         >
-          <Text style={[styles.smallButtonText, { color: cameraGranted ? colors.tint : colors.subtitle }]}>
-            {cameraGranted ? 'Choose Video' : 'Camera Off'}
+          <Text style={[styles.smallButtonText, { color: mediaLibraryGranted ? colors.tint : colors.subtitle }]}>
+            {mediaLibraryGranted ? 'Choose Video' : 'Media Off'}
           </Text>
         </Pressable>
       </View>
+
+      {isSavingVideo && (
+        <Text style={[styles.body, { color: colors.subtitle, marginBottom: 8 }]}>
+          💾 Saving video to gallery…
+        </Text>
+      )}
+
+      {videoFirebaseUrl && (
+        <Text style={[styles.body, { color: colors.success, marginBottom: 8 }]}>
+          ☁️ Video backed up to cloud storage.
+        </Text>
+      )}
 
       {videoUri ? (
         <>
@@ -578,6 +640,7 @@ export default function ActivityOneGame() {
         </>
       )}
 
+      {/* Design name is shared — also visible in Activity/Discussion tab */}
       <TextInput value={designName} onChangeText={setDesignName} placeholder="Design name, e.g. plastic bag with four strings" placeholderTextColor={colors.subtitle} style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]} />
       <TextInput value={prediction} onChangeText={setPrediction} placeholder="Predict which design will slow the fall the most" placeholderTextColor={colors.subtitle} multiline style={[styles.input, styles.multilineInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]} />
       <TextInput value={designNotes} onChangeText={setDesignNotes} placeholder="Sketch or design notes — materials used, shape, string length" placeholderTextColor={colors.subtitle} multiline style={[styles.input, styles.multilineInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]} />
