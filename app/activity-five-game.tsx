@@ -70,7 +70,7 @@ const MOVEMENT_OPTIONS: {
 
 export default function ActivityFiveGame() {
   const { colors } = useAppTheme();
-  const { motionGranted, enableMotion } = usePermissions();
+  const { motionGranted, askForMotion } = usePermissions();
   const { startAccelerometer, stopAccelerometer, resetSensorData } =
     useSensorService();
 
@@ -910,7 +910,7 @@ if (!motionGranted) {
 
         <Pressable
           onPress={async () => {
-            await enableMotion();
+            await askForMotion();
           }}
           style={{
             minHeight: 56,

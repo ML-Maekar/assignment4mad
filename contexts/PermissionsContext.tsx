@@ -9,19 +9,21 @@ import React, {
 import {
     isBatteryPermissionGranted,
     isMotionPermissionGranted,
-    requestBatteryPermission,
     requestMotionPermission,
-    revokeBatteryPermission,
     revokeMotionPermission,
+    setBatteryPermissionGranted,
 } from '@/utils/permissionService';
 
 type PermissionsState = {
   motionGranted: boolean;
   batteryGranted: boolean;
   loadingPermissions: boolean;
-  enableMotion: () => Promise<boolean>;
-  disableMotion: () => Promise<void>;
-  enableBattery: () => Promise<boolean>;
+  // Call this from activities — handles prompt + retry + settings
+  askForMotion: () => Promise<boolean>;
+  // Call this from settings toggle
+  enableMotionFromSettings: () => Promise<boolean>;
+  disableMotionFromSettings: () => Promise<void>;
+  enableBattery: () => Promise<void>;
   disableBattery: () => Promise<void>;
   refreshPermissions: () => Promise<void>;
 };
@@ -30,9 +32,10 @@ const PermissionsContext = createContext<PermissionsState>({
   motionGranted: false,
   batteryGranted: true,
   loadingPermissions: true,
-  enableMotion: async () => false,
-  disableMotion: async () => {},
-  enableBattery: async () => false,
+  askForMotion: async () => false,
+  enableMotionFromSettings: async () => false,
+  disableMotionFromSettings: async () => {},
+  enableBattery: async () => {},
   disableBattery: async () => {},
   refreshPermissions: async () => {},
 });
@@ -66,25 +69,33 @@ export function PermissionsProvider({
     refreshPermissions();
   }, [refreshPermissions]);
 
-  const enableMotion = useCallback(async () => {
+  // Used by activities 4, 5, 7 — full smart retry flow
+  const askForMotion = useCallback(async () => {
     const granted = await requestMotionPermission();
     setMotionGranted(granted);
     return granted;
   }, []);
 
-  const disableMotion = useCallback(async () => {
+  // Used by settings toggle ON
+  const enableMotionFromSettings = useCallback(async () => {
+    const granted = await requestMotionPermission();
+    setMotionGranted(granted);
+    return granted;
+  }, []);
+
+  // Used by settings toggle OFF
+  const disableMotionFromSettings = useCallback(async () => {
     await revokeMotionPermission();
     setMotionGranted(false);
   }, []);
 
   const enableBattery = useCallback(async () => {
-    const granted = await requestBatteryPermission();
-    setBatteryGranted(granted);
-    return granted;
+    await setBatteryPermissionGranted(true);
+    setBatteryGranted(true);
   }, []);
 
   const disableBattery = useCallback(async () => {
-    await revokeBatteryPermission();
+    await setBatteryPermissionGranted(false);
     setBatteryGranted(false);
   }, []);
 
@@ -94,8 +105,9 @@ export function PermissionsProvider({
         motionGranted,
         batteryGranted,
         loadingPermissions,
-        enableMotion,
-        disableMotion,
+        askForMotion,
+        enableMotionFromSettings,
+        disableMotionFromSettings,
         enableBattery,
         disableBattery,
         refreshPermissions,
