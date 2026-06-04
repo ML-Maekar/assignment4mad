@@ -67,12 +67,12 @@ const permissionOptions: PermissionOption[] = [
   {
     key: 'camera',
     title: 'Camera',
-    description: 'Used to record experiment videos and upload activity evidence.',
+    description: 'Required for Activities 1 and 3 — record video and take photos of experiments.',
   },
   {
     key: 'microphone',
     title: 'Microphone',
-    description: 'Used for the Sound Pollution Hunter activity.',
+    description: 'Required for Activity 2 — record and measure classroom sound levels.',
   },
   {
     key: 'location',
@@ -82,8 +82,7 @@ const permissionOptions: PermissionOption[] = [
   {
     key: 'motion',
     title: 'Motion Sensors',
-    description:
-      'Used for accelerometer, gyroscope, vibration and movement activities.',
+    description: 'Required for Activities 4, 5, and 7 — accelerometer, vibration and breathing.',
   },
   {
     key: 'notifications',
@@ -98,7 +97,7 @@ const permissionOptions: PermissionOption[] = [
   {
     key: 'battery',
     title: 'Battery Status',
-    description: 'Used to show device battery information across the app.',
+    description: 'Shows live battery level and charging status across the app.',
   },
   {
     key: 'backgroundTasks',
@@ -124,6 +123,15 @@ const initialPermissions: Record<PermissionKey, boolean> = {
   ads: false,
 };
 
+// Which permissions are connected to real system
+const CONNECTED_PERMISSIONS: PermissionKey[] = [
+  'camera',
+  'microphone',
+  'motion',
+  'battery',
+  'notifications',
+];
+
 export default function SettingScreen() {
   const { colors, themePreference, activeTheme, setThemePreference } =
     useAppTheme();
@@ -131,50 +139,53 @@ export default function SettingScreen() {
   const {
     motionGranted,
     batteryGranted,
+    cameraGranted,
+    micGranted,
     enableMotionFromSettings,
     disableMotionFromSettings,
     enableBattery,
     disableBattery,
+    enableCameraFromSettings,
+    disableCameraFromSettings,
+    enableMicFromSettings,
+    disableMicFromSettings,
   } = usePermissions();
 
   const [permissions, setPermissions] =
     useState<Record<PermissionKey, boolean>>(initialPermissions);
 
+  // Sync all real permissions into local state
   useEffect(() => {
     async function loadPermissionStatuses() {
-      // Notifications
       const status = await getNotificationPermissionStatus();
+
       setPermissions((current) => ({
-          ...current,
-          notifications: status === 'granted',
-          // Sync motion and battery from PermissionsContext
+        ...current,
+        notifications: status === 'granted',
         motion: motionGranted,
         battery: batteryGranted,
+        camera: cameraGranted,
+        microphone: micGranted,
       }));
     }
 
     loadPermissionStatuses();
-  }, [motionGranted, batteryGranted]);
+  }, [motionGranted, batteryGranted, cameraGranted, micGranted]);
 
   const updatePermission = (key: PermissionKey, value: boolean) => {
-    setPermissions((currentPermissions) => ({
-      ...currentPermissions,
-      [key]: value,
-    }));
+    setPermissions((current) => ({ ...current, [key]: value }));
   };
 
+  // ─── Notification toggle ──────────────────────────────────────
   const handleNotificationToggle = () => {
     const isEnabled = permissions.notifications;
 
     if (isEnabled) {
       Alert.alert(
         'Turn Off Notifications?',
-        'This will turn off notification reminders inside the app settings. To fully block notifications, you may also need to disable them in your phone settings.',
+        'This will cancel scheduled notifications. You may also need to disable them in phone settings.',
         [
-          {
-            text: 'Cancel',
-            style: 'cancel',
-          },
+          { text: 'Cancel', style: 'cancel' },
           {
             text: 'Turn Off',
             style: 'destructive',
@@ -185,7 +196,6 @@ export default function SettingScreen() {
           },
         ]
       );
-
       return;
     }
 
@@ -193,27 +203,17 @@ export default function SettingScreen() {
       'Allow Notifications?',
       'STEMM Lab would like to send challenge reminders, timer alerts and activity notifications.',
       [
-        {
-          text: 'Not Now',
-          style: 'cancel',
-        },
+        { text: 'Not Now', style: 'cancel' },
         {
           text: 'Allow',
           onPress: async () => {
             const granted = await requestNotificationPermission();
+            updatePermission('notifications', granted);
 
             if (granted) {
-              updatePermission('notifications', true);
-              Alert.alert(
-                'Notifications Enabled',
-                'STEMM Lab can now schedule local notifications.'
-              );
+              Alert.alert('Notifications Enabled', 'STEMM Lab can now schedule local notifications.');
             } else {
-              updatePermission('notifications', false);
-              Alert.alert(
-                'Permission Not Granted',
-                'Notifications were not enabled. You can allow them later from your phone settings.'
-              );
+              Alert.alert('Permission Not Granted', 'Notifications were not enabled. You can allow them later from your phone settings.');
             }
           },
         },
@@ -221,87 +221,147 @@ export default function SettingScreen() {
     );
   };
 
+  // ─── Motion toggle ────────────────────────────────────────────
+  const handleMotionToggle = () => {
+    if (permissions.motion) {
+      Alert.alert(
+        'Turn Off Motion Sensors?',
+        'Activities 4, 5, and 7 require motion sensors to work. Turning this off will block those activities.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Turn Off',
+            style: 'destructive',
+            onPress: async () => {
+              await disableMotionFromSettings();
+              updatePermission('motion', false);
+            },
+          },
+        ]
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Allow Motion Sensors?',
+      'STEMM Lab needs motion sensors for the Earthquake, Performance Lab, and Breathing activities.',
+      [
+        { text: 'Not Now', style: 'cancel' },
+        {
+          text: 'Allow',
+          onPress: async () => {
+            const granted = await enableMotionFromSettings();
+            updatePermission('motion', granted);
+          },
+        },
+      ]
+    );
+  };
+
+  // ─── Battery toggle ───────────────────────────────────────────
+  const handleBatteryToggle = () => {
+    if (permissions.battery) {
+      Alert.alert(
+        'Turn Off Battery Status?',
+        'The battery widget will stop updating and show a frozen reading.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Turn Off',
+            style: 'destructive',
+            onPress: async () => {
+              await disableBattery();
+              updatePermission('battery', false);
+            },
+          },
+        ]
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Allow Battery Status?',
+      'STEMM Lab will show live battery level and charging status.',
+      [
+        { text: 'Not Now', style: 'cancel' },
+        {
+          text: 'Allow',
+          onPress: async () => {
+            await enableBattery();
+            updatePermission('battery', true);
+          },
+        },
+      ]
+    );
+  };
+
+  // ─── Camera toggle ────────────────────────────────────────────
+  const handleCameraToggle = () => {
+    if (permissions.camera) {
+      Alert.alert(
+        'Turn Off Camera?',
+        'Activities 1 and 3 will not be able to record video or take photos until you turn this back on.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Turn Off',
+            style: 'destructive',
+            onPress: async () => {
+              await disableCameraFromSettings();
+              updatePermission('camera', false);
+            },
+          },
+        ]
+      );
+      return;
+    }
+
+    enableCameraFromSettings().then((granted) => {
+      updatePermission('camera', granted);
+      if (granted) {
+        Alert.alert('Camera Enabled', 'Activities 1 and 3 can now record video and take photos.');
+      }
+    });
+  };
+
+  // ─── Microphone toggle ────────────────────────────────────────
+  const handleMicrophoneToggle = () => {
+    if (permissions.microphone) {
+      Alert.alert(
+        'Turn Off Microphone?',
+        'Activity 2 (Sound Pollution Hunter) will not be able to record sound until you turn this back on.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Turn Off',
+            style: 'destructive',
+            onPress: async () => {
+              await disableMicFromSettings();
+              updatePermission('microphone', false);
+            },
+          },
+        ]
+      );
+      return;
+    }
+
+    enableMicFromSettings().then((granted) => {
+      updatePermission('microphone', granted);
+      if (granted) {
+        Alert.alert('Microphone Enabled', 'Activity 2 can now record and measure sound.');
+      }
+    });
+  };
+
+  // ─── Main permission toggle handler ───────────────────────────
   const handlePermissionToggle = (permission: PermissionOption) => {
-    if (permission.key === 'notifications') {
-      handleNotificationToggle();
-      return;
-    }
+    if (permission.key === 'notifications') { handleNotificationToggle(); return; }
+    if (permission.key === 'motion') { handleMotionToggle(); return; }
+    if (permission.key === 'battery') { handleBatteryToggle(); return; }
+    if (permission.key === 'camera') { handleCameraToggle(); return; }
+    if (permission.key === 'microphone') { handleMicrophoneToggle(); return; }
 
-    // Motion sensors — connected to real permissionService
-    if (permission.key === 'motion') {
-      if (permissions.motion) {
-        Alert.alert(
-          'Turn Off Motion Sensors?',
-          'Activities 4, 5, and 7 require motion sensors to work. Turning this off will block those activities.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Turn Off',
-              style: 'destructive',
-              onPress: async () => {
-                await disableMotionFromSettings();
-                updatePermission('motion', false);
-              },
-            },
-          ]
-        );
-      } else {
-        Alert.alert(
-          'Allow Motion Sensors?',
-          'STEMM Lab needs motion sensors for the Earthquake, Performance Lab, and Breathing activities.',
-          [
-            { text: 'Not Now', style: 'cancel' },
-            {
-              text: 'Allow',
-              onPress: async () => {
-                const granted = await enableMotionFromSettings();
-                updatePermission('motion', granted);
-              },
-            },
-          ]
-        );
-      }
-      return;
-    }
-
-    // Battery status — connected to real permissionService
-    if (permission.key === 'battery') {
-      if (permissions.battery) {
-        Alert.alert(
-          'Turn Off Battery Status?',
-          'The battery widget will stop updating and show a frozen reading.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Turn Off',
-              style: 'destructive',
-              onPress: async () => {
-                await disableBattery();
-                updatePermission('battery', false);
-              },
-            },
-          ]
-        );
-      } else {
-        Alert.alert(
-          'Allow Battery Status?',
-          'STEMM Lab will show live battery level and charging status.',
-          [
-            { text: 'Not Now', style: 'cancel' },
-            {
-              text: 'Allow',
-              onPress: async () => {
-                await enableBattery();
-                updatePermission('battery', true);
-              },
-            },
-          ]
-        );
-      }
-      return;
-    }
-
-    // All other permissions — UI placeholder for now
+    // Other permissions — placeholder toggle
     const isEnabled = permissions[permission.key];
 
     if (isEnabled) {
@@ -335,37 +395,21 @@ export default function SettingScreen() {
 
   const handleTestNotification = async () => {
     const scheduled = await scheduleTestNotification();
-
+    updatePermission('notifications', scheduled);
     if (scheduled) {
-      updatePermission('notifications', true);
-      Alert.alert(
-        'Test Scheduled',
-        'A test notification should appear in about 5 seconds.'
-      );
+      Alert.alert('Test Scheduled', 'A test notification should appear in about 5 seconds.');
     } else {
-      updatePermission('notifications', false);
-      Alert.alert(
-        'Notifications Disabled',
-        'Notification permission was not granted.'
-      );
+      Alert.alert('Notifications Disabled', 'Notification permission was not granted.');
     }
   };
 
   const handleChallengeReminder = async () => {
     const scheduled = await scheduleChallengeReminder();
-
+    updatePermission('notifications', scheduled);
     if (scheduled) {
-      updatePermission('notifications', true);
-      Alert.alert(
-        'Reminder Scheduled',
-        'A STEMM Lab challenge reminder should appear in about 15 seconds.'
-      );
+      Alert.alert('Reminder Scheduled', 'A STEMM Lab challenge reminder should appear in about 15 seconds.');
     } else {
-      updatePermission('notifications', false);
-      Alert.alert(
-        'Notifications Disabled',
-        'Notification permission was not granted.'
-      );
+      Alert.alert('Notifications Disabled', 'Notification permission was not granted.');
     }
   };
 
@@ -374,19 +418,13 @@ export default function SettingScreen() {
       'Cancel Scheduled Notifications?',
       'This will cancel all currently scheduled STEMM Lab notifications.',
       [
-        {
-          text: 'Keep',
-          style: 'cancel',
-        },
+        { text: 'Keep', style: 'cancel' },
         {
           text: 'Cancel All',
           style: 'destructive',
           onPress: async () => {
             await cancelAllScheduledNotifications();
-            Alert.alert(
-              'Notifications Cancelled',
-              'All scheduled notifications have been cancelled.'
-            );
+            Alert.alert('Notifications Cancelled', 'All scheduled notifications have been cancelled.');
           },
         },
       ]
@@ -400,25 +438,14 @@ export default function SettingScreen() {
     >
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.text }]}>Settings</Text>
-
         <Text style={[styles.subtitle, { color: colors.subtitle }]}>
           Manage app appearance, permissions, notifications and device sensors.
         </Text>
       </View>
 
-      <View
-        style={[
-          styles.card,
-          {
-            backgroundColor: colors.card,
-            borderColor: colors.border,
-          },
-        ]}
-      >
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>
-          App Theme
-        </Text>
-
+      {/* Theme */}
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>App Theme</Text>
         <Text style={[styles.sectionDescription, { color: colors.subtitle }]}>
           Active theme: {activeTheme === 'dark' ? 'Dark Mode' : 'Light Mode'}
         </Text>
@@ -426,7 +453,6 @@ export default function SettingScreen() {
         <View style={styles.optionsContainer}>
           {themeOptions.map((option) => {
             const selected = themePreference === option.value;
-
             return (
               <Pressable
                 key={option.value}
@@ -435,46 +461,17 @@ export default function SettingScreen() {
                   styles.option,
                   {
                     borderColor: selected ? colors.tint : colors.border,
-                    backgroundColor: selected
-                      ? `${colors.tint}20`
-                      : colors.background,
+                    backgroundColor: selected ? `${colors.tint}20` : colors.background,
                   },
                   pressed && styles.optionPressed,
                 ]}
               >
                 <View style={styles.optionTextContainer}>
-                  <Text style={[styles.optionTitle, { color: colors.text }]}>
-                    {option.label}
-                  </Text>
-
-                  <Text
-                    style={[
-                      styles.optionDescription,
-                      { color: colors.subtitle },
-                    ]}
-                  >
-                    {option.description}
-                  </Text>
+                  <Text style={[styles.optionTitle, { color: colors.text }]}>{option.label}</Text>
+                  <Text style={[styles.optionDescription, { color: colors.subtitle }]}>{option.description}</Text>
                 </View>
-
-                <View
-                  style={[
-                    styles.radioOuter,
-                    {
-                      borderColor: selected ? colors.tint : colors.subtitle,
-                    },
-                  ]}
-                >
-                  {selected && (
-                    <View
-                      style={[
-                        styles.radioInner,
-                        {
-                          backgroundColor: colors.tint,
-                        },
-                      ]}
-                    />
-                  )}
+                <View style={[styles.radioOuter, { borderColor: selected ? colors.tint : colors.subtitle }]}>
+                  {selected && <View style={[styles.radioInner, { backgroundColor: colors.tint }]} />}
                 </View>
               </Pressable>
             );
@@ -482,27 +479,17 @@ export default function SettingScreen() {
         </View>
       </View>
 
-      <View
-        style={[
-          styles.card,
-          {
-            backgroundColor: colors.card,
-            borderColor: colors.border,
-          },
-        ]}
-      >
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>
-          Permissions
-        </Text>
-
+      {/* Permissions */}
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>Permissions</Text>
         <Text style={[styles.sectionDescription, { color: colors.subtitle }]}>
-          Notifications now connect to the phone permission system. Other
-          switches are UI placeholders until their device packages are connected.
+          Camera, Microphone, Motion Sensors, Battery, and Notifications are connected to the real permission system.
         </Text>
 
         <View style={styles.permissionContainer}>
           {permissionOptions.map((permission) => {
             const enabled = permissions[permission.key];
+            const isConnected = CONNECTED_PERMISSIONS.includes(permission.key);
 
             return (
               <View
@@ -516,37 +503,27 @@ export default function SettingScreen() {
                 ]}
               >
                 <View style={styles.permissionTextContainer}>
-                  <Text
-                    style={[
-                      styles.permissionTitle,
-                      {
-                        color: colors.text,
-                      },
-                    ]}
-                  >
+                  <Text style={[styles.permissionTitle, { color: colors.text }]}>
                     {permission.title}
                   </Text>
-
-                  <Text
-                    style={[
-                      styles.permissionDescription,
-                      {
-                        color: colors.subtitle,
-                      },
-                    ]}
-                  >
+                  <Text style={[styles.permissionDescription, { color: colors.subtitle }]}>
                     {permission.description}
                   </Text>
-
                   <Text
                     style={[
                       styles.permissionStatus,
                       {
-                        color: enabled ? colors.success : colors.warning,
+                        color: enabled
+                          ? colors.success
+                          : isConnected
+                            ? colors.danger
+                            : colors.subtitle,
                       },
                     ]}
                   >
-                    {enabled ? 'Enabled' : 'Off'}
+                    {enabled
+                      ? isConnected ? '● Connected' : 'Enabled'
+                      : isConnected ? '● Blocked' : 'Off'}
                   </Text>
                 </View>
 
@@ -567,19 +544,9 @@ export default function SettingScreen() {
 
       <SensorServicePanel />
 
-      <View
-        style={[
-          styles.card,
-          {
-            backgroundColor: colors.card,
-            borderColor: colors.border,
-          },
-        ]}
-      >
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>
-          Notification Tools
-        </Text>
-
+      {/* Notification Tools */}
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>Notification Tools</Text>
         <Text style={[styles.sectionDescription, { color: colors.subtitle }]}>
           Use these buttons to test local notifications and challenge reminders.
         </Text>
@@ -624,23 +591,12 @@ export default function SettingScreen() {
         </Pressable>
       </View>
 
-      <View
-        style={[
-          styles.infoCard,
-          {
-            backgroundColor: colors.card,
-            borderColor: colors.border,
-          },
-        ]}
-      >
-        <Text style={[styles.infoTitle, { color: colors.text }]}>
-          Development Note
-        </Text>
-
+      {/* Info card */}
+      <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.infoTitle, { color: colors.text }]}>Development Note</Text>
         <Text style={[styles.infoText, { color: colors.subtitle }]}>
-          Sensor testing, notification testing, battery display and theme
-          controls are now part of the interface. Camera, microphone, GPS, media,
-          background tasks and ads will be connected later.
+          Camera, Microphone, Motion Sensors, Battery, and Notifications are now fully connected to real phone permissions.
+          Location, Media Storage, Background Tasks, and Ads will be connected in a later update.
         </Text>
       </View>
     </ScrollView>
@@ -648,45 +604,15 @@ export default function SettingScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  content: {
-    padding: 20,
-    paddingTop: 60,
-    paddingBottom: 120,
-  },
-  header: {
-    marginBottom: 24,
-  },
-  title: {
-    fontSize: 34,
-    fontWeight: '800',
-  },
-  subtitle: {
-    marginTop: 8,
-    fontSize: 16,
-    lineHeight: 22,
-  },
-  card: {
-    borderWidth: 1,
-    borderRadius: 22,
-    padding: 18,
-    marginBottom: 18,
-  },
-  sectionTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-  },
-  sectionDescription: {
-    marginTop: 6,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  optionsContainer: {
-    marginTop: 18,
-    gap: 12,
-  },
+  container: { flex: 1 },
+  content: { padding: 20, paddingTop: 60, paddingBottom: 120 },
+  header: { marginBottom: 24 },
+  title: { fontSize: 34, fontWeight: '800' },
+  subtitle: { marginTop: 8, fontSize: 16, lineHeight: 22 },
+  card: { borderWidth: 1, borderRadius: 22, padding: 18, marginBottom: 18 },
+  sectionTitle: { fontSize: 22, fontWeight: '800' },
+  sectionDescription: { marginTop: 6, fontSize: 14, lineHeight: 20 },
+  optionsContainer: { marginTop: 18, gap: 12 },
   option: {
     borderWidth: 1,
     borderRadius: 18,
@@ -694,23 +620,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  optionPressed: {
-    transform: [{ scale: 0.98 }],
-    opacity: 0.85,
-  },
-  optionTextContainer: {
-    flex: 1,
-    paddingRight: 12,
-  },
-  optionTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-  },
-  optionDescription: {
-    marginTop: 4,
-    fontSize: 13,
-    lineHeight: 18,
-  },
+  optionPressed: { transform: [{ scale: 0.98 }], opacity: 0.85 },
+  optionTextContainer: { flex: 1, paddingRight: 12 },
+  optionTitle: { fontSize: 17, fontWeight: '700' },
+  optionDescription: { marginTop: 4, fontSize: 13, lineHeight: 18 },
   radioOuter: {
     width: 24,
     height: 24,
@@ -719,15 +632,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  radioInner: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  permissionContainer: {
-    marginTop: 18,
-    gap: 12,
-  },
+  radioInner: { width: 12, height: 12, borderRadius: 6 },
+  permissionContainer: { marginTop: 18, gap: 12 },
   permissionRow: {
     borderWidth: 1,
     borderRadius: 18,
@@ -735,24 +641,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  permissionTextContainer: {
-    flex: 1,
-    paddingRight: 14,
-  },
-  permissionTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-  },
-  permissionDescription: {
-    marginTop: 4,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  permissionStatus: {
-    marginTop: 8,
-    fontSize: 13,
-    fontWeight: '700',
-  },
+  permissionTextContainer: { flex: 1, paddingRight: 14 },
+  permissionTitle: { fontSize: 17, fontWeight: '700' },
+  permissionDescription: { marginTop: 4, fontSize: 13, lineHeight: 18 },
+  permissionStatus: { marginTop: 8, fontSize: 13, fontWeight: '700' },
   actionButton: {
     marginTop: 14,
     minHeight: 54,
@@ -760,10 +652,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  actionButtonText: {
-    fontSize: 16,
-    fontWeight: '800',
-  },
+  actionButtonText: { fontSize: 16, fontWeight: '800' },
   outlineButton: {
     marginTop: 14,
     minHeight: 54,
@@ -772,23 +661,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  outlineButtonText: {
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  infoCard: {
-    borderWidth: 1,
-    borderRadius: 22,
-    padding: 18,
-    marginBottom: 18,
-  },
-  infoTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  infoText: {
-    marginTop: 8,
-    fontSize: 14,
-    lineHeight: 20,
-  },
+  outlineButtonText: { fontSize: 16, fontWeight: '800' },
+  infoCard: { borderWidth: 1, borderRadius: 22, padding: 18, marginBottom: 18 },
+  infoTitle: { fontSize: 18, fontWeight: '800' },
+  infoText: { marginTop: 8, fontSize: 14, lineHeight: 20 },
 });

@@ -4,19 +4,24 @@ import {
     ActivityResultInput,
     saveActivityResult,
 } from '../utils/activityResultsDb';
+import { getCurrentLocationTag } from '../utils/locationService';
 import { auth, db } from './firebase';
-
-// This is the common attempt-saving function
-// It saves to BOTH SQLite (local) AND Firestore (cloud) at the same time
-// SQLite = works offline, fast, local history
-// Firestore = syncs across devices, powers the leaderboard
 
 export async function saveAttempt(input: ActivityResultInput) {
   // Step 1 — Always save to SQLite first (works offline)
   const localId = await saveActivityResult(input);
 
-  // Step 2 — Try to save to Firestore (needs internet)
-  // If it fails we don't crash the app — result is still saved locally
+  // Step 2 — Get GPS location tag silently
+  // Returns null if location permission is not granted — result still saves
+  let locationTag = null;
+
+  try {
+    locationTag = await getCurrentLocationTag();
+  } catch {
+    // Location failed silently — don't block the save
+  }
+
+  // Step 3 — Try to save to Firestore with location attached
   try {
     const currentUser = auth.currentUser;
 
@@ -29,14 +34,20 @@ export async function saveAttempt(input: ActivityResultInput) {
       userId: currentUser ? currentUser.uid : null,
       userEmail: currentUser ? currentUser.email : null,
       localId,
+      location: locationTag
+        ? {
+            latitude: locationTag.latitude,
+            longitude: locationTag.longitude,
+            accuracy: locationTag.accuracy,
+            address: locationTag.address,
+          }
+        : null,
       createdAt: serverTimestamp(),
     });
   } catch (error) {
-    // Firestore failed (no internet etc) — SQLite result is still safe
+    // Firestore failed (offline etc) — SQLite result is still safe
     console.log('Firestore save failed, result kept in SQLite:', error);
   }
 
-  // Always return the local SQLite id
-  // so result-summary navigation still works
   return localId;
 }

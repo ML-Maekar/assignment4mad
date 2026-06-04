@@ -14,7 +14,7 @@ import {
 
 import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
-import { saveActivityResult } from '@/utils/activityResultsDb';
+import { saveAttempt } from '@/services/attemptService';
 import {
   getLocalTeamProfile,
   getStudentLevelFromGrade,
@@ -53,26 +53,21 @@ type Result = {
   safetyMessage: string;
 };
 
+const ACTIVITY_KEY = 'activity-one';
+const ACTIVITY_TITLE = 'Parachute Drop Challenge';
 const PLAYBACK_SPEEDS = [1, 0.5, 0.25, 0.125, 0.1];
 
 function getDropLabel(dropType: DropType, prototypeNumber: number) {
-  if (dropType === 'baseline') {
-    return 'Action 1: No parachute baseline';
-  }
-
+  if (dropType === 'baseline') return 'Action 1: No parachute baseline';
   return `Prototype ${prototypeNumber}`;
 }
 
 function getSafetyMessage(gForce: number | null) {
-  if (gForce === null) {
-    return 'Primary calculation complete: final speed calculated.';
-  }
-
+  if (gForce === null) return 'Primary calculation complete: final speed calculated.';
   if (gForce <= 5) return '1–5 g: No injury';
   if (gForce <= 10) return '5–10 g: Possible bruising or strains';
   if (gForce <= 30) return '10–30 g: Serious injuries possible';
   if (gForce <= 50) return '30–50 g: High risk of severe injury';
-
   return '50+ g: Life-threatening injuries likely';
 }
 
@@ -80,7 +75,6 @@ export default function ActivityOneGame() {
   const { colors } = useAppTheme();
 
   const [activeTab, setActiveTab] = useState<TabKey>('activity');
-
   const [studentLevel, setStudentLevel] = useState<StudentLevel>('primary');
   const [teamGradeLevel, setTeamGradeLevel] = useState('');
 
@@ -92,13 +86,13 @@ export default function ActivityOneGame() {
   const [prediction, setPrediction] = useState('');
   const [designNotes, setDesignNotes] = useState('');
   const [easiestDesign, setEasiestDesign] = useState('');
+  const [surprises, setSurprises] = useState('');
 
   const [dropHeight, setDropHeight] = useState('');
   const [predictedTime, setPredictedTime] = useState('');
   const [actualTime, setActualTime] = useState('');
   const [wasPredictionCorrect, setWasPredictionCorrect] = useState('');
   const [stoppingTime, setStoppingTime] = useState('');
-
   const [toyMass, setToyMass] = useState('');
   const [reboundTime, setReboundTime] = useState('');
 
@@ -113,48 +107,29 @@ export default function ActivityOneGame() {
   useEffect(() => {
     async function loadTeamProfile() {
       const teamProfile = await getLocalTeamProfile();
-
-      if (!teamProfile) {
-        return;
-      }
-
+      if (!teamProfile) return;
       setTeamGradeLevel(teamProfile.gradeLevel);
       setStudentLevel(getStudentLevelFromGrade(teamProfile.gradeLevel));
     }
-
     loadTeamProfile();
   }, []);
 
-  const zoomInVideo = () => {
-    setVideoZoom((currentZoom) => Math.min(currentZoom + 0.25, 3));
-  };
-
-  const zoomOutVideo = () => {
-    setVideoZoom((currentZoom) => Math.max(currentZoom - 0.25, 1));
-  };
-
-  const resetVideoZoom = () => {
-    setVideoZoom(1);
-  };
+  const zoomInVideo = () => setVideoZoom((z) => Math.min(z + 0.25, 3));
+  const zoomOutVideo = () => setVideoZoom((z) => Math.max(z - 0.25, 1));
+  const resetVideoZoom = () => setVideoZoom(1);
 
   const recordVideoEvidence = async () => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
-
     if (!permission.granted) {
-      Alert.alert(
-        'Camera Permission Needed',
-        'Please allow camera access to record the parachute drop.'
-      );
+      Alert.alert('Camera Permission Needed', 'Please allow camera access to record the parachute drop.');
       return;
     }
-
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Videos,
       allowsEditing: false,
       quality: 1,
       videoMaxDuration: 45,
     });
-
     if (!result.canceled) {
       setVideoUri(result.assets[0].uri);
       setVideoZoom(1);
@@ -163,21 +138,15 @@ export default function ActivityOneGame() {
 
   const chooseVideoEvidence = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-
     if (!permission.granted) {
-      Alert.alert(
-        'Media Permission Needed',
-        'Please allow gallery access to choose a video.'
-      );
+      Alert.alert('Media Permission Needed', 'Please allow gallery access to choose a video.');
       return;
     }
-
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Videos,
       allowsEditing: false,
       quality: 1,
     });
-
     if (!result.canceled) {
       setVideoUri(result.assets[0].uri);
       setVideoZoom(1);
@@ -189,12 +158,10 @@ export default function ActivityOneGame() {
       Alert.alert('Missing Design Name', 'Please enter the design name.');
       return;
     }
-
     if (!prediction.trim()) {
       Alert.alert('Missing Prediction', 'Please enter your prediction.');
       return;
     }
-
     if (!designNotes.trim()) {
       Alert.alert('Missing Design Notes', 'Please enter design or sketch notes.');
       return;
@@ -215,8 +182,7 @@ export default function ActivityOneGame() {
       easiestDesign: easiestDesign.trim(),
     };
 
-    setSavedWriteUps((currentWriteUps) => [newWriteUp, ...currentWriteUps]);
-
+    setSavedWriteUps((current) => [newWriteUp, ...current]);
     Alert.alert('Write-Up Saved', `${label} write-up has been saved.`);
   };
 
@@ -232,62 +198,41 @@ export default function ActivityOneGame() {
       Alert.alert('Missing Design Name', 'Please enter the design name.');
       return;
     }
-
     if (!prediction.trim()) {
       Alert.alert('Missing Prediction', 'Please enter your prediction.');
       return;
     }
-
     if (!designNotes.trim()) {
       Alert.alert('Missing Design Notes', 'Please enter design or sketch notes.');
       return;
     }
-
     if (Number.isNaN(dropHeightValue) || dropHeightValue <= 0) {
       Alert.alert('Invalid Drop Height', 'Please enter the drop height in metres.');
       return;
     }
-
     if (Number.isNaN(actualTimeValue) || actualTimeValue <= 0) {
       Alert.alert('Invalid Time', 'Please enter the time to first hit the ground.');
       return;
     }
-
-    if (
-      predictedTime.trim() &&
-      (Number.isNaN(predictedTimeValue) || predictedTimeValue <= 0)
-    ) {
+    if (predictedTime.trim() && (Number.isNaN(predictedTimeValue) || predictedTimeValue <= 0)) {
       Alert.alert('Invalid Prediction Time', 'Please enter a valid predicted time.');
       return;
     }
-
     if (!wasPredictionCorrect.trim()) {
       Alert.alert('Missing Answer', 'Please enter whether your prediction was correct.');
       return;
     }
-
     if (studentLevel === 'high') {
       if (Number.isNaN(toyMassValue) || toyMassValue <= 0) {
         Alert.alert('Invalid Mass', 'Please enter the toy mass in kg.');
         return;
       }
-
       if (Number.isNaN(stoppingTimeValue) || stoppingTimeValue <= 0) {
-        Alert.alert(
-          'Invalid Stopping Time',
-          'Please enter the time from first hit to stop moving using slow motion.'
-        );
+        Alert.alert('Invalid Stopping Time', 'Please enter the time from first hit to stop moving using slow motion.');
         return;
       }
-
-      if (
-        bounceType === 'bounce' &&
-        (Number.isNaN(reboundTimeValue) || reboundTimeValue <= 0)
-      ) {
-        Alert.alert(
-          'Invalid Rebound Time',
-          'Please enter rebound time if the toy bounced.'
-        );
+      if (bounceType === 'bounce' && (Number.isNaN(reboundTimeValue) || reboundTimeValue <= 0)) {
+        Alert.alert('Invalid Rebound Time', 'Please enter rebound time if the toy bounced.');
         return;
       }
     }
@@ -296,44 +241,19 @@ export default function ActivityOneGame() {
       setIsSaving(true);
 
       const finalSpeed = dropHeightValue / actualTimeValue;
-
-      const acceleration =
-        studentLevel === 'high' ? finalSpeed / actualTimeValue : null;
-
-      const netForce =
-        studentLevel === 'high' && acceleration !== null
-          ? toyMassValue * acceleration
-          : null;
-
+      const acceleration = studentLevel === 'high' ? finalSpeed / actualTimeValue : null;
+      const netForce = studentLevel === 'high' && acceleration !== null ? toyMassValue * acceleration : null;
       const weight = studentLevel === 'high' ? toyMassValue * 9.8 : null;
-
-      const dragForce =
-        studentLevel === 'high' && weight !== null && netForce !== null
-          ? weight - netForce
-          : null;
-
-      const upwardVelocity =
-        studentLevel === 'high' && bounceType === 'bounce'
-          ? 9.8 * reboundTimeValue
-          : 0;
-
-      const gForce =
-        studentLevel === 'high'
-          ? (finalSpeed + upwardVelocity) / stoppingTimeValue / 9.8
-          : null;
-
+      const dragForce = studentLevel === 'high' && weight !== null && netForce !== null ? weight - netForce : null;
+      const upwardVelocity = studentLevel === 'high' && bounceType === 'bounce' ? 9.8 * reboundTimeValue : 0;
+      const gForce = studentLevel === 'high' ? (finalSpeed + upwardVelocity) / stoppingTimeValue / 9.8 : null;
       const safetyMessage = getSafetyMessage(gForce);
-
-      const score =
-        gForce !== null
-          ? Math.max(0, 100 - gForce * 2)
-          : Math.max(0, actualTimeValue * 10);
-
+      const score = gForce !== null ? Math.max(0, 100 - gForce * 2) : Math.max(0, actualTimeValue * 10);
       const label = getDropLabel(dropType, prototypeNumber);
 
-      const resultId = await saveActivityResult({
-        activityKey: 'activity-one',
-        activityTitle: 'Parachute Drop Challenge',
+      const savedResultId = await saveAttempt({
+        activityKey: ACTIVITY_KEY,
+        activityTitle: ACTIVITY_TITLE,
         label,
         score,
         data: {
@@ -345,13 +265,13 @@ export default function ActivityOneGame() {
           prediction: prediction.trim(),
           designNotes: designNotes.trim(),
           easiestDesign: easiestDesign.trim(),
+          surprises: surprises.trim(),
           savedWriteUps,
           dropHeightMetres: dropHeightValue,
           predictedTimeSeconds: predictedTime.trim() ? predictedTimeValue : null,
           actualTimeToFirstHitGroundSeconds: actualTimeValue,
           wasPredictionCorrect: wasPredictionCorrect.trim(),
-          stoppingTimeSeconds:
-            studentLevel === 'high' ? stoppingTimeValue : null,
+          stoppingTimeSeconds: studentLevel === 'high' ? stoppingTimeValue : null,
           finalSpeedMetresPerSecond: finalSpeed,
           toyMassKg: studentLevel === 'high' ? toyMassValue : null,
           accelerationMetresPerSecondSquared: acceleration,
@@ -359,10 +279,7 @@ export default function ActivityOneGame() {
           weightNewtons: weight,
           dragForceNewtons: dragForce,
           bounceType: studentLevel === 'high' ? bounceType : null,
-          reboundTimeSeconds:
-            studentLevel === 'high' && bounceType === 'bounce'
-              ? reboundTimeValue
-              : null,
+          reboundTimeSeconds: studentLevel === 'high' && bounceType === 'bounce' ? reboundTimeValue : null,
           gForce,
           safetyMessage,
           videoUri,
@@ -378,7 +295,7 @@ export default function ActivityOneGame() {
       });
 
       const savedResult: Result = {
-        id: resultId,
+        id: savedResultId,
         label,
         designName: designName.trim(),
         finalSpeed,
@@ -394,7 +311,14 @@ export default function ActivityOneGame() {
 
       Alert.alert(
         'Result Saved',
-        `Speed: ${finalSpeed.toFixed(2)} m/s\n${safetyMessage}`
+        `Speed: ${finalSpeed.toFixed(2)} m/s\n${safetyMessage}`,
+        [
+          {
+            text: 'View Summary',
+            onPress: () => router.push(`/result-summary?resultId=${savedResultId}` as never),
+          },
+          { text: 'Stay Here', style: 'cancel' },
+        ]
       );
     } catch (error) {
       console.log('Failed to save Activity 1 result:', error);
@@ -412,6 +336,7 @@ export default function ActivityOneGame() {
     setPrediction('');
     setDesignNotes('');
     setEasiestDesign('');
+    setSurprises('');
     setDropHeight('');
     setPredictedTime('');
     setActualTime('');
@@ -426,6 +351,7 @@ export default function ActivityOneGame() {
     setActiveTab('activity');
   };
 
+  // ─── Tab renderer ─────────────────────────────────────────────
   const renderTabs = () => {
     const tabs: { key: TabKey; label: string }[] = [
       { key: 'activity', label: 'Activity' },
@@ -437,25 +363,17 @@ export default function ActivityOneGame() {
       <View style={[styles.bottomTabRow, { borderTopColor: colors.border }]}>
         {tabs.map((tab) => {
           const selected = activeTab === tab.key;
-
           return (
             <Pressable
               key={tab.key}
               onPress={() => setActiveTab(tab.key)}
               style={({ pressed }) => [
                 styles.bottomTabButton,
-                {
-                  borderBottomColor: selected ? colors.tint : 'transparent',
-                },
+                { borderBottomColor: selected ? colors.tint : 'transparent' },
                 pressed && styles.buttonPressed,
               ]}
             >
-              <Text
-                style={[
-                  styles.bottomTabText,
-                  { color: selected ? colors.tint : colors.subtitle },
-                ]}
-              >
+              <Text style={[styles.bottomTabText, { color: selected ? colors.tint : colors.subtitle }]}>
                 {tab.label}
               </Text>
             </Pressable>
@@ -465,26 +383,46 @@ export default function ActivityOneGame() {
     );
   };
 
+  // ─── Activity Tab ──────────────────────────────────────────────
   const renderActivityTab = () => (
-    <View
-      style={[
-        styles.phoneLayoutCard,
-        { backgroundColor: colors.card, borderColor: colors.border },
-      ]}
-    >
-      <View style={styles.recordHeader}>
-        <Text style={[styles.recordText, { color: colors.text }]}>Record</Text>
+    <View style={[styles.phoneLayoutCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+
+      <Text style={[styles.cardTitle, { color: colors.text }]}>Instructions</Text>
+
+      <View style={[styles.instructionBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
+        <Text style={[styles.body, { color: colors.subtitle }]}>
+          1. Design and build a parachute for a small toy using available materials.
+        </Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>
+          2. First run with no parachute (baseline) — drop from table height.
+        </Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>
+          3. Position the phone to capture the full drop — toy, parachute, table and landing area.
+        </Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>
+          4. Record video using the buttons below, then use slow motion to measure timing.
+        </Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>
+          5. Zoom in to find: (a) time of release, (b) first hit on ground, (c) stop moving.
+        </Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>
+          6. Redesign and test up to 3 prototypes. Rotate for each team member.
+        </Text>
       </View>
 
-      <Image
-        source={PARACHUTE_DEMO_IMAGE}
-        style={styles.demoImage}
-        resizeMode="contain"
-      />
+      {/* Diagram */}
+      <View style={[styles.diagramBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
+        <Text style={[styles.diagramTitle, { color: colors.text }]}>Setup Diagram</Text>
+        <Text style={[styles.diagramText, { color: colors.subtitle }]}>🧸 Toy with parachute attached</Text>
+        <Text style={[styles.diagramText, { color: colors.subtitle }]}>↕ Dropped from table height</Text>
+        <Text style={[styles.diagramText, { color: colors.subtitle }]}>📱 Phone positioned to capture full drop</Text>
+        <Text style={[styles.diagramText, { color: colors.subtitle }]}>🎯 Landing area below</Text>
+      </View>
+
+      <Image source={PARACHUTE_DEMO_IMAGE} style={styles.demoImage} resizeMode="contain" />
 
       <Text style={[styles.body, { color: colors.subtitle }]}>
-        Place the phone where it can capture the full drop, including the toy,
-        parachute, table, and landing area.
+        Place the phone where it can capture the full drop, including the toy, parachute, table, and landing area.
       </Text>
 
       <View style={styles.mediaButtonRow}>
@@ -496,9 +434,7 @@ export default function ActivityOneGame() {
             pressed && styles.buttonPressed,
           ]}
         >
-          <Text style={[styles.smallButtonText, { color: colors.buttonText }]}>
-            Record Video
-          </Text>
+          <Text style={[styles.smallButtonText, { color: colors.buttonText }]}>Record Video</Text>
         </Pressable>
 
         <Pressable
@@ -509,9 +445,7 @@ export default function ActivityOneGame() {
             pressed && styles.buttonPressed,
           ]}
         >
-          <Text style={[styles.smallButtonText, { color: colors.tint }]}>
-            Choose Video
-          </Text>
+          <Text style={[styles.smallButtonText, { color: colors.tint }]}>Choose Video</Text>
         </Pressable>
       </View>
 
@@ -528,14 +462,11 @@ export default function ActivityOneGame() {
             />
           </View>
 
-          <Text style={[styles.label, { color: colors.text }]}>
-            Slow-Motion Playback
-          </Text>
+          <Text style={[styles.label, { color: colors.text }]}>Slow-Motion Playback</Text>
 
           <View style={styles.speedRow}>
             {PLAYBACK_SPEEDS.map((speed) => {
               const selected = playbackRate === speed;
-
               return (
                 <Pressable
                   key={speed}
@@ -544,19 +475,12 @@ export default function ActivityOneGame() {
                     styles.speedButton,
                     {
                       borderColor: selected ? colors.tint : colors.border,
-                      backgroundColor: selected
-                        ? `${colors.tint}20`
-                        : colors.background,
+                      backgroundColor: selected ? `${colors.tint}20` : colors.background,
                     },
                     pressed && styles.buttonPressed,
                   ]}
                 >
-                  <Text
-                    style={[
-                      styles.speedText,
-                      { color: selected ? colors.tint : colors.text },
-                    ]}
-                  >
+                  <Text style={[styles.speedText, { color: selected ? colors.tint : colors.text }]}>
                     {speed}x
                   </Text>
                 </Pressable>
@@ -569,41 +493,23 @@ export default function ActivityOneGame() {
           <View style={styles.speedRow}>
             <Pressable
               onPress={zoomOutVideo}
-              style={({ pressed }) => [
-                styles.speedButton,
-                { borderColor: colors.border, backgroundColor: colors.background },
-                pressed && styles.buttonPressed,
-              ]}
+              style={({ pressed }) => [styles.speedButton, { borderColor: colors.border, backgroundColor: colors.background }, pressed && styles.buttonPressed]}
             >
-              <Text style={[styles.speedText, { color: colors.text }]}>
-                Zoom -
-              </Text>
+              <Text style={[styles.speedText, { color: colors.text }]}>Zoom -</Text>
             </Pressable>
 
             <Pressable
               onPress={resetVideoZoom}
-              style={({ pressed }) => [
-                styles.speedButton,
-                { borderColor: colors.border, backgroundColor: colors.background },
-                pressed && styles.buttonPressed,
-              ]}
+              style={({ pressed }) => [styles.speedButton, { borderColor: colors.border, backgroundColor: colors.background }, pressed && styles.buttonPressed]}
             >
-              <Text style={[styles.speedText, { color: colors.text }]}>
-                {videoZoom.toFixed(2)}x
-              </Text>
+              <Text style={[styles.speedText, { color: colors.text }]}>{videoZoom.toFixed(2)}x</Text>
             </Pressable>
 
             <Pressable
               onPress={zoomInVideo}
-              style={({ pressed }) => [
-                styles.speedButton,
-                { borderColor: colors.border, backgroundColor: colors.background },
-                pressed && styles.buttonPressed,
-              ]}
+              style={({ pressed }) => [styles.speedButton, { borderColor: colors.border, backgroundColor: colors.background }, pressed && styles.buttonPressed]}
             >
-              <Text style={[styles.speedText, { color: colors.text }]}>
-                Zoom +
-              </Text>
+              <Text style={[styles.speedText, { color: colors.text }]}>Zoom +</Text>
             </Pressable>
           </View>
         </>
@@ -613,21 +519,20 @@ export default function ActivityOneGame() {
     </View>
   );
 
+  // ─── Write-up Tab ──────────────────────────────────────────────
   const renderWriteUpTab = () => (
-    <View
-      style={[
-        styles.phoneLayoutCard,
-        { backgroundColor: colors.card, borderColor: colors.border },
-      ]}
-    >
+    <View style={[styles.phoneLayoutCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <Text style={[styles.cardTitle, { color: colors.text }]}>Write Up</Text>
+
+      <Text style={[styles.body, { color: colors.subtitle }]}>
+        Complete on paper or use the fields below. Rotate for each team member.
+      </Text>
 
       <Text style={[styles.label, { color: colors.text }]}>Action Type</Text>
 
       <View style={styles.optionRow}>
         {(['baseline', 'prototype'] as DropType[]).map((type) => {
           const selected = dropType === type;
-
           return (
             <Pressable
               key={type}
@@ -636,20 +541,13 @@ export default function ActivityOneGame() {
                 styles.optionButton,
                 {
                   borderColor: selected ? colors.tint : colors.border,
-                  backgroundColor: selected
-                    ? `${colors.tint}20`
-                    : colors.background,
+                  backgroundColor: selected ? `${colors.tint}20` : colors.background,
                 },
                 pressed && styles.buttonPressed,
               ]}
             >
-              <Text
-                style={[
-                  styles.optionText,
-                  { color: selected ? colors.tint : colors.text },
-                ]}
-              >
-                {type === 'baseline' ? 'No Parachute' : 'Parachute Prototype'}
+              <Text style={[styles.optionText, { color: selected ? colors.tint : colors.text }]}>
+                {type === 'baseline' ? 'No Parachute (Baseline)' : 'Parachute Prototype'}
               </Text>
             </Pressable>
           );
@@ -658,14 +556,10 @@ export default function ActivityOneGame() {
 
       {dropType === 'prototype' && (
         <>
-          <Text style={[styles.label, { color: colors.text }]}>
-            Prototype Number
-          </Text>
-
+          <Text style={[styles.label, { color: colors.text }]}>Prototype Number</Text>
           <View style={styles.optionRow}>
             {[1, 2, 3].map((number) => {
               const selected = prototypeNumber === number;
-
               return (
                 <Pressable
                   key={number}
@@ -674,19 +568,12 @@ export default function ActivityOneGame() {
                     styles.smallChoice,
                     {
                       borderColor: selected ? colors.tint : colors.border,
-                      backgroundColor: selected
-                        ? `${colors.tint}20`
-                        : colors.background,
+                      backgroundColor: selected ? `${colors.tint}20` : colors.background,
                     },
                     pressed && styles.buttonPressed,
                   ]}
                 >
-                  <Text
-                    style={[
-                      styles.optionText,
-                      { color: selected ? colors.tint : colors.text },
-                    ]}
-                  >
+                  <Text style={[styles.optionText, { color: selected ? colors.tint : colors.text }]}>
                     {number}
                   </Text>
                 </Pressable>
@@ -699,130 +586,112 @@ export default function ActivityOneGame() {
       <TextInput
         value={designName}
         onChangeText={setDesignName}
-        placeholder="Design name, e.g. plastic with four strings"
+        placeholder="Design name, e.g. plastic bag with four strings"
         placeholderTextColor={colors.subtitle}
-        style={[
-          styles.input,
-          {
-            color: colors.text,
-            borderColor: colors.border,
-            backgroundColor: colors.background,
-          },
-        ]}
+        style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
       />
 
       <TextInput
         value={prediction}
         onChangeText={setPrediction}
-        placeholder="Predict which design was best"
+        placeholder="Predict which design will slow the fall the most"
         placeholderTextColor={colors.subtitle}
         multiline
-        style={[
-          styles.input,
-          styles.multilineInput,
-          {
-            color: colors.text,
-            borderColor: colors.border,
-            backgroundColor: colors.background,
-          },
-        ]}
+        style={[styles.input, styles.multilineInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
       />
 
       <TextInput
         value={designNotes}
         onChangeText={setDesignNotes}
-        placeholder="Sketch/design notes"
+        placeholder="Sketch or design notes — materials used, shape, string length"
         placeholderTextColor={colors.subtitle}
         multiline
-        style={[
-          styles.input,
-          styles.multilineInput,
-          {
-            color: colors.text,
-            borderColor: colors.border,
-            backgroundColor: colors.background,
-          },
-        ]}
+        style={[styles.input, styles.multilineInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
       />
+
+      {/* Results table */}
+      <Text style={[styles.label, { color: colors.text }]}>Results Table</Text>
+
+      <View style={[styles.tableBox, { borderColor: colors.border, backgroundColor: colors.background }]}>
+        <View style={[styles.tableRow, { borderColor: colors.border }]}>
+          <Text style={[styles.tableHeader, { color: colors.text, flex: 2 }]}>Design</Text>
+          <Text style={[styles.tableHeader, { color: colors.text, flex: 1 }]}>Predicted (s)</Text>
+          <Text style={[styles.tableHeader, { color: colors.text, flex: 1 }]}>Actual (s)</Text>
+        </View>
+
+        {savedWriteUps.length === 0 ? (
+          <Text style={[styles.body, { color: colors.subtitle, padding: 10 }]}>
+            Save write-ups below to populate results here.
+          </Text>
+        ) : (
+          savedWriteUps.map((writeUp) => (
+            <View key={writeUp.id} style={[styles.tableRow, { borderColor: colors.border }]}>
+              <Text style={[styles.tableCell, { color: colors.text, flex: 2 }]} numberOfLines={2}>
+                {writeUp.designName}
+              </Text>
+              <Text style={[styles.tableCell, { color: colors.subtitle, flex: 1 }]}>
+                {writeUp.predictedTime || '—'}
+              </Text>
+              <Text style={[styles.tableCell, { color: colors.subtitle, flex: 1 }]}>
+                {writeUp.actualTime || '—'}
+              </Text>
+            </View>
+          ))
+        )}
+      </View>
 
       <TextInput
         value={predictedTime}
         onChangeText={setPredictedTime}
-        placeholder="How long will it take to hit the ground? seconds"
+        placeholder="Predicted time to hit ground (seconds)"
         placeholderTextColor={colors.subtitle}
         keyboardType="decimal-pad"
-        style={[
-          styles.input,
-          {
-            color: colors.text,
-            borderColor: colors.border,
-            backgroundColor: colors.background,
-          },
-        ]}
+        style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
       />
 
       <TextInput
         value={actualTime}
         onChangeText={setActualTime}
-        placeholder="Time to first hit ground in seconds"
+        placeholder="Actual time to first hit ground (seconds)"
         placeholderTextColor={colors.subtitle}
         keyboardType="decimal-pad"
-        style={[
-          styles.input,
-          {
-            color: colors.text,
-            borderColor: colors.border,
-            backgroundColor: colors.background,
-          },
-        ]}
+        style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
       />
 
       <TextInput
         value={wasPredictionCorrect}
         onChangeText={setWasPredictionCorrect}
-        placeholder="Were you right?"
+        placeholder="Were you right? Explain why or why not."
         placeholderTextColor={colors.subtitle}
-        style={[
-          styles.input,
-          {
-            color: colors.text,
-            borderColor: colors.border,
-            backgroundColor: colors.background,
-          },
-        ]}
+        multiline
+        style={[styles.input, styles.multilineInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
       />
 
       <TextInput
         value={stoppingTime}
         onChangeText={setStoppingTime}
-        placeholder="Time from first hit to stop moving, from slow motion"
+        placeholder="Time from first hit to stop moving (slow motion)"
         placeholderTextColor={colors.subtitle}
         keyboardType="decimal-pad"
-        style={[
-          styles.input,
-          {
-            color: colors.text,
-            borderColor: colors.border,
-            backgroundColor: colors.background,
-          },
-        ]}
+        style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+      />
+
+      <TextInput
+        value={surprises}
+        onChangeText={setSurprises}
+        placeholder="Any surprises during the drop?"
+        placeholderTextColor={colors.subtitle}
+        multiline
+        style={[styles.input, styles.multilineInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
       />
 
       <TextInput
         value={easiestDesign}
         onChangeText={setEasiestDesign}
-        placeholder="What design was easiest to make?"
+        placeholder="Which design was easiest to make and why?"
         placeholderTextColor={colors.subtitle}
         multiline
-        style={[
-          styles.input,
-          styles.multilineInput,
-          {
-            color: colors.text,
-            borderColor: colors.border,
-            backgroundColor: colors.background,
-          },
-        ]}
+        style={[styles.input, styles.multilineInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
       />
 
       <Pressable
@@ -833,22 +702,14 @@ export default function ActivityOneGame() {
           pressed && styles.buttonPressed,
         ]}
       >
-        <Text style={[styles.buttonText, { color: colors.buttonText }]}>
-          Save Write-Up
-        </Text>
+        <Text style={[styles.buttonText, { color: colors.buttonText }]}>Save Write-Up</Text>
       </Pressable>
 
       {savedWriteUps.length > 0 && (
         <View style={[styles.resultBox, { borderColor: colors.border }]}>
-          <Text style={[styles.resultTitle, { color: colors.text }]}>
-            Saved Write-Ups
-          </Text>
-
+          <Text style={[styles.resultTitle, { color: colors.text }]}>Saved Write-Ups</Text>
           {savedWriteUps.map((writeUp) => (
-            <Text
-              key={writeUp.id}
-              style={[styles.body, { color: colors.subtitle }]}
-            >
+            <Text key={writeUp.id} style={[styles.body, { color: colors.subtitle }]}>
               {writeUp.label}: {writeUp.designName}
             </Text>
           ))}
@@ -859,65 +720,76 @@ export default function ActivityOneGame() {
     </View>
   );
 
+  // ─── Discussion Tab ────────────────────────────────────────────
   const renderDiscussionTab = () => (
-    <View
-      style={[
-        styles.phoneLayoutCard,
-        { backgroundColor: colors.card, borderColor: colors.border },
-      ]}
-    >
+    <View style={[styles.phoneLayoutCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <Text style={[styles.cardTitle, { color: colors.text }]}>Discussion</Text>
 
-      <View
-        style={[
-          styles.formulaBox,
-          { borderColor: colors.border, backgroundColor: colors.background },
-        ]}
-      >
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          Team grade/year level: {teamGradeLevel || 'Not selected'}
+      <View style={[styles.discussionBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
+        <Text style={[styles.discussionHeading, { color: colors.text }]}>
+          Team Level: {teamGradeLevel || 'Not selected'} — {studentLevel === 'primary' ? 'Primary School' : 'High School'} Calculations
         </Text>
-
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          This activity is using:{' '}
-          {studentLevel === 'primary' ? 'Primary School' : 'High School'} calculations.
-        </Text>
-
         {studentLevel === 'primary' ? (
           <>
-            <Text style={[styles.body, { color: colors.subtitle }]}>
-              Primary School students calculate:
-            </Text>
-            <Text style={[styles.body, { color: colors.subtitle }]}>
-              • Time to hit the ground
-            </Text>
-            <Text style={[styles.body, { color: colors.subtitle }]}>
-              • Final speed = drop height ÷ time
-            </Text>
+            <Text style={[styles.body, { color: colors.subtitle }]}>• Time to hit the ground</Text>
+            <Text style={[styles.body, { color: colors.subtitle }]}>• Final speed = drop height ÷ time</Text>
           </>
         ) : (
           <>
-            <Text style={[styles.body, { color: colors.subtitle }]}>
-              High School students calculate:
-            </Text>
-            <Text style={[styles.body, { color: colors.subtitle }]}>
-              • Final speed / velocity
-            </Text>
-            <Text style={[styles.body, { color: colors.subtitle }]}>
-              • Acceleration
-            </Text>
-            <Text style={[styles.body, { color: colors.subtitle }]}>
-              • Net force
-            </Text>
-            <Text style={[styles.body, { color: colors.subtitle }]}>
-              • Drag force
-            </Text>
-            <Text style={[styles.body, { color: colors.subtitle }]}>
-              • G-force using slow-motion stopping time
-            </Text>
+            <Text style={[styles.body, { color: colors.subtitle }]}>• Final speed / velocity</Text>
+            <Text style={[styles.body, { color: colors.subtitle }]}>• Acceleration = velocity ÷ time</Text>
+            <Text style={[styles.body, { color: colors.subtitle }]}>• Net force = mass × acceleration</Text>
+            <Text style={[styles.body, { color: colors.subtitle }]}>• Weight = mass × 9.8</Text>
+            <Text style={[styles.body, { color: colors.subtitle }]}>• Drag force = weight − net force</Text>
+            <Text style={[styles.body, { color: colors.subtitle }]}>• G-force = change in velocity ÷ contact time ÷ 9.8</Text>
           </>
         )}
       </View>
+
+      <View style={[styles.discussionBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
+        <Text style={[styles.discussionHeading, { color: colors.text }]}>What is a Parachute Doing?</Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>
+          A parachute increases air resistance (drag force) which slows the fall. The larger the surface area, the more air it catches and the slower the descent.
+        </Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>
+          The goal is to achieve the slowest and safest landing — the lowest g-force on impact means the least injury risk to the toy.
+        </Text>
+      </View>
+
+      <View style={[styles.discussionBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
+        <Text style={[styles.discussionHeading, { color: colors.text }]}>G-Force and Safety</Text>
+        <View style={[styles.tableBox, { borderColor: colors.border, backgroundColor: colors.background }]}>
+          {[
+            ['1–5 g', 'No injury'],
+            ['5–10 g', 'Possible bruising or strains'],
+            ['10–30 g', 'Serious injuries possible'],
+            ['30–50 g', 'High risk of severe injury'],
+            ['50+ g', 'Life-threatening injuries likely'],
+          ].map(([range, risk]) => (
+            <View key={range} style={[styles.tableRow, { borderColor: colors.border }]}>
+              <Text style={[styles.tableCell, { color: colors.text, flex: 1 }]}>{range}</Text>
+              <Text style={[styles.tableCell, { color: colors.subtitle, flex: 2 }]}>{risk}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+
+      <View style={[styles.discussionBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
+        <Text style={[styles.discussionHeading, { color: colors.text }]}>Think About This</Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>• Which design slowed the fall the most?</Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>• Which design had the lowest g-force on impact?</Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>• What materials or shapes worked best?</Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>• What would you change with more time?</Text>
+      </View>
+
+      <View style={[styles.discussionBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
+        <Text style={[styles.discussionHeading, { color: colors.text }]}>Curriculum Links</Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>• ACSSU117 – Forces and motion</Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>• ACTDEP036 – Testing and improving design solutions</Text>
+      </View>
+
+      {/* Measurement inputs */}
+      <Text style={[styles.label, { color: colors.text }]}>Enter Measurements to Calculate</Text>
 
       <TextInput
         value={dropHeight}
@@ -925,14 +797,7 @@ export default function ActivityOneGame() {
         placeholder="Drop height in metres"
         placeholderTextColor={colors.subtitle}
         keyboardType="decimal-pad"
-        style={[
-          styles.input,
-          {
-            color: colors.text,
-            borderColor: colors.border,
-            backgroundColor: colors.background,
-          },
-        ]}
+        style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
       />
 
       {studentLevel === 'high' && (
@@ -943,24 +808,14 @@ export default function ActivityOneGame() {
             placeholder="Toy mass in kg"
             placeholderTextColor={colors.subtitle}
             keyboardType="decimal-pad"
-            style={[
-              styles.input,
-              {
-                color: colors.text,
-                borderColor: colors.border,
-                backgroundColor: colors.background,
-              },
-            ]}
+            style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
           />
 
-          <Text style={[styles.label, { color: colors.text }]}>
-            Landing Type
-          </Text>
+          <Text style={[styles.label, { color: colors.text }]}>Landing Type</Text>
 
           <View style={styles.optionRow}>
             {(['no-bounce', 'bounce'] as BounceType[]).map((type) => {
               const selected = bounceType === type;
-
               return (
                 <Pressable
                   key={type}
@@ -969,19 +824,12 @@ export default function ActivityOneGame() {
                     styles.optionButton,
                     {
                       borderColor: selected ? colors.tint : colors.border,
-                      backgroundColor: selected
-                        ? `${colors.tint}20`
-                        : colors.background,
+                      backgroundColor: selected ? `${colors.tint}20` : colors.background,
                     },
                     pressed && styles.buttonPressed,
                   ]}
                 >
-                  <Text
-                    style={[
-                      styles.optionText,
-                      { color: selected ? colors.tint : colors.text },
-                    ]}
-                  >
+                  <Text style={[styles.optionText, { color: selected ? colors.tint : colors.text }]}>
                     {type === 'no-bounce' ? 'No Bounce' : 'Bounce'}
                   </Text>
                 </Pressable>
@@ -996,14 +844,7 @@ export default function ActivityOneGame() {
               placeholder="Rebound time to highest point in seconds"
               placeholderTextColor={colors.subtitle}
               keyboardType="decimal-pad"
-              style={[
-                styles.input,
-                {
-                  color: colors.text,
-                  borderColor: colors.border,
-                  backgroundColor: colors.background,
-                },
-              ]}
+              style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
             />
           )}
         </>
@@ -1014,7 +855,7 @@ export default function ActivityOneGame() {
         disabled={isSaving}
         style={({ pressed }) => [
           styles.button,
-          { backgroundColor: colors.tint },
+          { backgroundColor: isSaving ? colors.subtitle : colors.tint },
           pressed && styles.buttonPressed,
         ]}
       >
@@ -1025,48 +866,36 @@ export default function ActivityOneGame() {
 
       {lastResult && (
         <View style={[styles.resultBox, { borderColor: colors.border }]}>
-          <Text style={[styles.resultTitle, { color: colors.text }]}>
-            {lastResult.label}
-          </Text>
-
-          <Text style={[styles.body, { color: colors.subtitle }]}>
-            Design: {lastResult.designName}
-          </Text>
-
+          <Text style={[styles.resultTitle, { color: colors.text }]}>{lastResult.label}</Text>
+          <Text style={[styles.body, { color: colors.subtitle }]}>Design: {lastResult.designName}</Text>
           <Text style={[styles.score, { color: colors.success }]}>
             Final speed: {lastResult.finalSpeed.toFixed(2)} m/s
           </Text>
-
           {lastResult.acceleration !== null && (
             <Text style={[styles.body, { color: colors.subtitle }]}>
               Acceleration: {lastResult.acceleration.toFixed(2)} m/s²
             </Text>
           )}
-
           {lastResult.netForce !== null && (
             <Text style={[styles.body, { color: colors.subtitle }]}>
               Net force: {lastResult.netForce.toFixed(3)} N
             </Text>
           )}
-
           {lastResult.weight !== null && (
             <Text style={[styles.body, { color: colors.subtitle }]}>
               Weight: {lastResult.weight.toFixed(3)} N
             </Text>
           )}
-
           {lastResult.dragForce !== null && (
             <Text style={[styles.body, { color: colors.subtitle }]}>
               Drag force: {lastResult.dragForce.toFixed(3)} N
             </Text>
           )}
-
           {lastResult.gForce !== null && (
             <Text style={[styles.body, { color: colors.subtitle }]}>
               G-force: {lastResult.gForce.toFixed(2)} g
             </Text>
           )}
-
           <Text style={[styles.body, { color: colors.subtitle }]}>
             Safety: {lastResult.safetyMessage}
           </Text>
@@ -1074,18 +903,25 @@ export default function ActivityOneGame() {
       )}
 
       <Pressable
-        onPress={() =>
-          router.push('/result-history?activityKey=activity-one' as never)
-        }
+        onPress={() => router.push('/result-history?activityKey=activity-one' as never)}
         style={({ pressed }) => [
           styles.secondaryButton,
           { borderColor: colors.tint },
           pressed && styles.buttonPressed,
         ]}
       >
-        <Text style={[styles.secondaryButtonText, { color: colors.tint }]}>
-          Open Result History
-        </Text>
+        <Text style={[styles.secondaryButtonText, { color: colors.tint }]}>Open Result History</Text>
+      </Pressable>
+
+      <Pressable
+        onPress={() => router.push('/leaderboard?activityKey=activity-one' as never)}
+        style={({ pressed }) => [
+          styles.secondaryButton,
+          { borderColor: colors.tint },
+          pressed && styles.buttonPressed,
+        ]}
+      >
+        <Text style={[styles.secondaryButtonText, { color: colors.tint }]}>View Leaderboard</Text>
       </Pressable>
 
       <Pressable
@@ -1096,9 +932,7 @@ export default function ActivityOneGame() {
           pressed && styles.buttonPressed,
         ]}
       >
-        <Text style={[styles.secondaryButtonText, { color: colors.text }]}>
-          Clear Test
-        </Text>
+        <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Clear Test</Text>
       </Pressable>
 
       {renderTabs()}
@@ -1108,12 +942,9 @@ export default function ActivityOneGame() {
   return (
     <AppScreen>
       <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>
-          Parachute Drop Challenge
-        </Text>
-
+        <Text style={[styles.title, { color: colors.text }]}>Parachute Drop Challenge</Text>
         <Text style={[styles.subtitle, { color: colors.subtitle }]}>
-          Record the drop, complete the write-up, then calculate the result.
+          Design and test a parachute. Record the drop, complete the write-up, then calculate the result.
         </Text>
       </View>
 
@@ -1125,18 +956,9 @@ export default function ActivityOneGame() {
 }
 
 const styles = StyleSheet.create({
-  header: {
-    marginBottom: 20,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '900',
-  },
-  subtitle: {
-    marginTop: 8,
-    fontSize: 16,
-    lineHeight: 22,
-  },
+  header: { marginBottom: 20 },
+  title: { fontSize: 32, fontWeight: '900' },
+  subtitle: { marginTop: 8, fontSize: 16, lineHeight: 22 },
   phoneLayoutCard: {
     borderWidth: 2,
     borderRadius: 24,
@@ -1144,19 +966,26 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     minHeight: 620,
   },
-  recordHeader: {
-    alignItems: 'flex-end',
+  cardTitle: { fontSize: 20, fontWeight: '900', marginBottom: 12 },
+  label: { fontSize: 15, fontWeight: '800', marginBottom: 8, marginTop: 4 },
+  body: { fontSize: 15, lineHeight: 22 },
+  instructionBox: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 14,
     marginBottom: 16,
+    gap: 6,
   },
-  recordText: {
-    fontSize: 24,
-    fontWeight: '500',
+  diagramBox: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 16,
+    gap: 4,
   },
-  demoImage: {
-    width: '100%',
-    height: 260,
-    marginBottom: 18,
-  },
+  diagramTitle: { fontSize: 15, fontWeight: '800', marginBottom: 8 },
+  diagramText: { fontSize: 14, lineHeight: 22 },
+  demoImage: { width: '100%', height: 260, marginBottom: 18 },
   bottomTabRow: {
     marginTop: 'auto',
     flexDirection: 'row',
@@ -1165,29 +994,8 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     gap: 4,
   },
-  bottomTabButton: {
-    paddingHorizontal: 6,
-    paddingBottom: 4,
-    borderBottomWidth: 2,
-  },
-  bottomTabText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  cardTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    marginBottom: 12,
-  },
-  label: {
-    fontSize: 15,
-    fontWeight: '800',
-    marginBottom: 8,
-  },
-  body: {
-    fontSize: 15,
-    lineHeight: 22,
-  },
+  bottomTabButton: { paddingHorizontal: 6, paddingBottom: 4, borderBottomWidth: 2 },
+  bottomTabText: { fontSize: 13, fontWeight: '700' },
   input: {
     borderWidth: 1,
     borderRadius: 14,
@@ -1195,16 +1003,8 @@ const styles = StyleSheet.create({
     fontSize: 15,
     marginBottom: 12,
   },
-  multilineInput: {
-    minHeight: 90,
-    textAlignVertical: 'top',
-  },
-  optionRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginBottom: 14,
-  },
+  multilineInput: { minHeight: 80, textAlignVertical: 'top' },
+  optionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 14 },
   optionButton: {
     flex: 1,
     minHeight: 46,
@@ -1222,10 +1022,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  optionText: {
-    fontSize: 14,
-    fontWeight: '900',
-  },
+  optionText: { fontSize: 14, fontWeight: '900' },
   mediaButtonRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1248,10 +1045,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  smallButtonText: {
-    fontSize: 13,
-    fontWeight: '900',
-  },
+  smallButtonText: { fontSize: 13, fontWeight: '900' },
   videoFrame: {
     width: '100%',
     height: 230,
@@ -1259,33 +1053,29 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: 12,
   },
-  video: {
-    width: '100%',
-    height: 230,
-  },
-  speedRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 12,
-  },
+  video: { width: '100%', height: 230 },
+  speedRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   speedButton: {
     borderWidth: 1,
     borderRadius: 12,
     paddingVertical: 8,
     paddingHorizontal: 12,
   },
-  speedText: {
-    fontSize: 13,
-    fontWeight: '900',
-  },
-  formulaBox: {
+  speedText: { fontSize: 13, fontWeight: '900' },
+  tableBox: {
     borderWidth: 1,
-    borderRadius: 16,
-    padding: 14,
+    borderRadius: 14,
     marginBottom: 14,
-    gap: 6,
+    overflow: 'hidden',
   },
+  tableRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+  },
+  tableHeader: { fontSize: 13, fontWeight: '900' },
+  tableCell: { fontSize: 13, fontWeight: '600' },
   button: {
     minHeight: 56,
     borderRadius: 18,
@@ -1301,31 +1091,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 10,
   },
-  buttonPressed: {
-    transform: [{ scale: 0.98 }],
-    opacity: 0.85,
+  buttonPressed: { transform: [{ scale: 0.98 }], opacity: 0.85 },
+  buttonText: { fontSize: 16, fontWeight: '900' },
+  secondaryButtonText: { fontSize: 15, fontWeight: '900' },
+  resultBox: { borderTopWidth: 1, paddingTop: 12, marginTop: 14 },
+  resultTitle: { fontSize: 16, fontWeight: '900', marginBottom: 4 },
+  score: { marginTop: 4, fontSize: 15, fontWeight: '900' },
+  discussionBox: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 12,
+    gap: 6,
   },
-  buttonText: {
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  secondaryButtonText: {
-    fontSize: 15,
-    fontWeight: '900',
-  },
-  resultBox: {
-    borderTopWidth: 1,
-    paddingTop: 12,
-    marginTop: 14,
-  },
-  resultTitle: {
-    fontSize: 16,
-    fontWeight: '900',
-    marginBottom: 4,
-  },
-  score: {
-    marginTop: 4,
-    fontSize: 15,
-    fontWeight: '900',
-  },
+  discussionHeading: { fontSize: 16, fontWeight: '900', marginBottom: 6 },
 });
