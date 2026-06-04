@@ -1,21 +1,23 @@
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Pressable,
-    StyleSheet,
-    Text,
-    View,
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
 
 import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
 import {
-    ActivityResultRecord,
-    clearActivityResultsByActivity,
-    getActivityResultsByActivity,
-    getAllActivityResults,
+  getFirestoreLeaderboardAll,
+  getFirestoreLeaderboardByActivity,
+} from '@/services/leaderboardService';
+import {
+  ActivityResultRecord,
+  clearActivityResultsByActivity,
 } from '@/utils/activityResultsDb';
 
 type ActivityFilter = {
@@ -64,6 +66,7 @@ export default function LeaderboardScreen() {
   );
   const [results, setResults] = useState<ActivityResultRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dataSource, setDataSource] = useState<'firestore' | 'sqlite'>('sqlite');
 
   const title = useMemo(() => {
     const filterLabel = getFilterLabel(selectedActivityKey);
@@ -84,13 +87,15 @@ export default function LeaderboardScreen() {
       setLoading(true);
 
       if (selectedActivityKey) {
-        const activityResults =
-          await getActivityResultsByActivity(selectedActivityKey);
-        setResults(activityResults);
+        const { results: fetchedResults, source } =
+          await getFirestoreLeaderboardByActivity(selectedActivityKey);
+        setResults(fetchedResults);
+        setDataSource(source);
       } else {
-        const allResults = await getAllActivityResults();
-        const sortedResults = [...allResults].sort((a, b) => b.score - a.score);
-        setResults(sortedResults);
+        const { results: fetchedResults, source } =
+          await getFirestoreLeaderboardAll();
+        setResults(fetchedResults);
+        setDataSource(source);
       }
     } catch (error) {
       console.log('Failed to load leaderboard:', error);
@@ -155,7 +160,20 @@ export default function LeaderboardScreen() {
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
         <Text style={[styles.subtitle, { color: colors.subtitle }]}>
-          Scores are saved locally using SQLite and ranked by highest score.
+          Rankings from all teams across all devices.
+        </Text>
+        <Text
+          style={[
+            styles.sourceText,
+            {
+              color:
+                dataSource === 'firestore' ? colors.success : colors.subtitle,
+            },
+          ]}
+        >
+          {dataSource === 'firestore'
+            ? '● Live from cloud'
+            : '● Showing local results'}
         </Text>
       </View>
 
@@ -228,7 +246,7 @@ export default function LeaderboardScreen() {
         ) : (
           results.map((result, index) => (
             <View
-              key={result.id}
+              key={`${result.id}-${index}`}
               style={[
                 styles.resultRow,
                 {
@@ -241,7 +259,13 @@ export default function LeaderboardScreen() {
                   styles.rankBadge,
                   {
                     backgroundColor:
-                      index === 0 ? colors.success : colors.background,
+                      index === 0
+                        ? colors.success
+                        : index === 1
+                          ? colors.tint
+                          : index === 2
+                            ? colors.warning ?? colors.subtitle
+                            : colors.background,
                     borderColor: colors.border,
                   },
                 ]}
@@ -250,7 +274,8 @@ export default function LeaderboardScreen() {
                   style={[
                     styles.rankText,
                     {
-                      color: index === 0 ? colors.buttonText : colors.text,
+                      color:
+                        index <= 2 ? colors.buttonText : colors.text,
                     },
                   ]}
                 >
@@ -284,7 +309,7 @@ export default function LeaderboardScreen() {
 
       <View style={styles.buttonGroup}>
         <Pressable
-          onPress={() => router.push('/result-history' as never)}
+          onPress={loadResults}
           style={({ pressed }) => [
             styles.button,
             { backgroundColor: colors.tint },
@@ -292,6 +317,19 @@ export default function LeaderboardScreen() {
           ]}
         >
           <Text style={[styles.buttonText, { color: colors.buttonText }]}>
+            Refresh Leaderboard
+          </Text>
+        </Pressable>
+
+        <Pressable
+          onPress={() => router.push('/result-history' as never)}
+          style={({ pressed }) => [
+            styles.secondaryButton,
+            { borderColor: colors.tint },
+            pressed && styles.buttonPressed,
+          ]}
+        >
+          <Text style={[styles.secondaryButtonText, { color: colors.tint }]}>
             View Result History
           </Text>
         </Pressable>
@@ -318,7 +356,9 @@ export default function LeaderboardScreen() {
               pressed && styles.buttonPressed,
             ]}
           >
-            <Text style={[styles.secondaryButtonText, { color: colors.danger }]}>
+            <Text
+              style={[styles.secondaryButtonText, { color: colors.danger }]}
+            >
               Clear Activity Results
             </Text>
           </Pressable>
@@ -363,6 +403,11 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 16,
     lineHeight: 22,
+  },
+  sourceText: {
+    marginTop: 6,
+    fontSize: 13,
+    fontWeight: '700',
   },
   filterCard: {
     borderWidth: 1,

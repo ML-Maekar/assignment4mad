@@ -1,3 +1,11 @@
+import GlobalBatteryStatus from '@/components/GlobalBatteryStatus';
+import NotificationSetup from '@/components/NotificationSetup';
+import {
+  ThemeProvider as AppThemeProvider,
+  useAppTheme,
+} from '@/contexts/AppThemeContext';
+import { AuthProvider } from '@/contexts/AuthContext';
+import { PermissionsProvider } from '@/contexts/PermissionsContext';
 import {
   DarkTheme,
   DefaultTheme,
@@ -7,14 +15,6 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React from 'react';
 import 'react-native-reanimated';
-
-import GlobalBatteryStatus from '@/components/GlobalBatteryStatus';
-import NotificationSetup from '@/components/NotificationSetup';
-import {
-  ThemeProvider as AppThemeProvider,
-  useAppTheme,
-} from '@/contexts/AppThemeContext';
-import { AuthProvider } from '@/contexts/AuthContext';
 
 function RootLayoutContent() {
   const { activeTheme, colors } = useAppTheme();
@@ -163,10 +163,12 @@ function RootLayoutContent() {
 
 export default function RootLayout() {
   return (
-    <AppThemeProvider>
-      <AuthProvider>
+  <AuthProvider>
+    <PermissionsProvider>
+      <AppThemeProvider>
         <RootLayoutContent />
-      </AuthProvider>
-    </AppThemeProvider>
-  );
+      </AppThemeProvider>
+    </PermissionsProvider>
+  </AuthProvider>
+);
 }
