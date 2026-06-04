@@ -1,6 +1,7 @@
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Pressable,
   StyleSheet,
@@ -11,10 +12,12 @@ import {
 import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
 import {
+  getFirestoreResultHistory,
+  getFirestoreResultsByActivity,
+} from '@/services/resultHistoryService';
+import {
   ActivityResultRecord,
   deleteActivityResult,
-  getActivityResultsByActivity,
-  getAllActivityResults,
 } from '@/utils/activityResultsDb';
 
 const ACTIVITY_FILTERS = [
@@ -103,25 +106,24 @@ export default function ResultHistoryScreen() {
 
   const [selectedFilter, setSelectedFilter] = useState(initialFilter);
   const [results, setResults] = useState<ActivityResultRecord[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-
-  const selectedFilterLabel = useMemo(() => {
-    return (
-      ACTIVITY_FILTERS.find((filter) => filter.key === selectedFilter)?.label ||
-      'All'
-    );
-  }, [selectedFilter]);
+  const [loading, setLoading] = useState(true);
+  const [dataSource, setDataSource] = useState<'firestore' | 'sqlite'>('sqlite');
 
   const loadResults = useCallback(async () => {
     try {
-      setIsLoading(true);
+      setLoading(true);
 
-      const loadedResults =
-        selectedFilter === 'all'
-          ? await getAllActivityResults()
-          : await getActivityResultsByActivity(selectedFilter);
-
-      setResults(loadedResults);
+      if (selectedActivityKey) {
+        const { results: fetchedResults, source } =
+          await getFirestoreResultsByActivity(selectedActivityKey);
+        setResults(fetchedResults);
+        setDataSource(source);
+      } else {
+        const { results: fetchedResults, source } =
+          await getFirestoreResultHistory();
+        setResults(fetchedResults);
+        setDataSource(source);
+      }
     } catch (error) {
       console.log('Failed to load result history:', error);
       Alert.alert('Load Failed', 'Result history could not be loaded.');
@@ -161,6 +163,19 @@ export default function ResultHistoryScreen() {
 
         <Text style={[styles.subtitle, { color: colors.subtitle }]}>
           View saved overall results from the STEMM Lab activities.
+        </Text>
+        <Text
+          style={[
+            styles.sourceText,
+            {
+              color:
+                dataSource === 'firestore' ? colors.success : colors.subtitle,
+            },
+          ]}
+        >
+          {dataSource === 'firestore'
+            ? '● Synced from cloud'
+            : '● Showing local results'}
         </Text>
       </View>
 
@@ -330,6 +345,18 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   filterRow: {
+  sourceText: {
+    marginTop: 6,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  filterCard: {
+    borderWidth: 1,
+    borderRadius: 22,
+    padding: 18,
+    marginBottom: 16,
+  },
+  filterGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,

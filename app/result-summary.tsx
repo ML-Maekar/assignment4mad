@@ -1,18 +1,25 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
-    Pressable,
-    StyleSheet,
-    Text,
-    View,
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 
 import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
 import {
-    ActivityResultRecord,
-    getActivityResultById,
+  CommentRating,
+  getCommentsRatingsByActivity,
+  saveCommentRating,
+} from '@/services/commentsRatingsService';
+import {
+  ActivityResultRecord,
+  getActivityResultById,
 } from '@/utils/activityResultsDb';
 
 function formatDate(value: string) {
@@ -46,6 +53,49 @@ function getGameRoute(activityKey: string) {
   return routes[activityKey] ?? '/(tabs)/home';
 }
 
+function renderStars(
+  rating: number,
+  onPress: (star: number) => void,
+  tintColor: string,
+  borderColor: string
+) {
+  return (
+    <View style={starStyles.row}>
+      {[1, 2, 3, 4, 5].map((star) => (
+        <Pressable
+          key={star}
+          onPress={() => onPress(star)}
+          style={starStyles.star}
+        >
+          <Text
+            style={[
+              starStyles.starText,
+              { color: star <= rating ? tintColor : borderColor },
+            ]}
+          >
+            ★
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+const starStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    gap: 8,
+    marginVertical: 10,
+  },
+  star: {
+    padding: 4,
+  },
+  starText: {
+    fontSize: 36,
+    fontWeight: '900',
+  },
+});
+
 export default function ResultSummaryScreen() {
   const { colors } = useAppTheme();
   const params = useLocalSearchParams();
@@ -58,6 +108,14 @@ export default function ResultSummaryScreen() {
 
   const [result, setResult] = useState<ActivityResultRecord | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Comments and ratings state
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState('');
+  const [isSavingComment, setIsSavingComment] = useState(false);
+  const [commentSaved, setCommentSaved] = useState(false);
+  const [existingComments, setExistingComments] = useState<CommentRating[]>([]);
+  const [loadingComments, setLoadingComments] = useState(false);
 
   const extraData = useMemo(() => {
     if (!result?.dataJson) {
@@ -91,6 +149,67 @@ export default function ResultSummaryScreen() {
 
     loadResult();
   }, [resultId]);
+
+  // Load existing comments when result loads
+  useEffect(() => {
+    if (!result?.activityKey) {
+      return;
+    }
+
+    async function loadComments() {
+      try {
+        setLoadingComments(true);
+        const comments = await getCommentsRatingsByActivity(result!.activityKey);
+        setExistingComments(comments);
+      } catch (error) {
+        console.log('Failed to load comments:', error);
+      } finally {
+        setLoadingComments(false);
+      }
+    }
+
+    loadComments();
+  }, [result]);
+
+  const handleSaveComment = async () => {
+    if (rating === 0) {
+      Alert.alert('Rating Required', 'Please tap a star to give a rating.');
+      return;
+    }
+
+    if (!comment.trim()) {
+      Alert.alert('Comment Required', 'Please write a short comment.');
+      return;
+    }
+
+    if (!result) {
+      return;
+    }
+
+    try {
+      setIsSavingComment(true);
+
+      await saveCommentRating({
+        activityKey: result.activityKey,
+        activityTitle: result.activityTitle,
+        rating,
+        comment,
+      });
+
+      setCommentSaved(true);
+
+      // Reload comments to show the new one
+      const updated = await getCommentsRatingsByActivity(result.activityKey);
+      setExistingComments(updated);
+
+      Alert.alert('Comment Saved', 'Your rating and comment have been saved.');
+    } catch (error) {
+      console.log('Failed to save comment:', error);
+      Alert.alert('Save Failed', 'Could not save your comment. Please try again.');
+    } finally {
+      setIsSavingComment(false);
+    }
+  };
 
   const openLeaderboard = () => {
     if (!result) {
@@ -156,10 +275,11 @@ export default function ResultSummaryScreen() {
           Result Summary
         </Text>
         <Text style={[styles.subtitle, { color: colors.subtitle }]}>
-          Your activity result has been saved locally on this device.
+          Your activity result has been saved.
         </Text>
       </View>
 
+      {/* Score Card */}
       <View
         style={[
           styles.scoreCard,
@@ -186,6 +306,7 @@ export default function ResultSummaryScreen() {
         </Text>
       </View>
 
+      {/* Result Details */}
       <View
         style={[
           styles.card,
@@ -229,6 +350,115 @@ export default function ResultSummaryScreen() {
         ))}
       </View>
 
+      {/* Comments and Ratings */}
+      <View
+        style={[
+          styles.card,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+          },
+        ]}
+      >
+        <Text style={[styles.cardTitle, { color: colors.text }]}>
+          Rate This Activity
+        </Text>
+
+        {commentSaved ? (
+          <Text style={[styles.savedText, { color: colors.success }]}>
+            ✓ Your rating and comment have been saved.
+          </Text>
+        ) : (
+          <>
+            <Text style={[styles.detailLabel, { color: colors.subtitle }]}>
+              Tap to rate
+            </Text>
+
+            {renderStars(rating, setRating, colors.tint, colors.border)}
+
+            <TextInput
+              value={comment}
+              onChangeText={setComment}
+              placeholder="Write a short comment about this activity..."
+              placeholderTextColor={colors.subtitle}
+              multiline
+              style={[
+                styles.commentInput,
+                {
+                  color: colors.text,
+                  borderColor: colors.border,
+                  backgroundColor: colors.background,
+                },
+              ]}
+            />
+
+            <Pressable
+              onPress={handleSaveComment}
+              disabled={isSavingComment}
+              style={({ pressed }) => [
+                styles.button,
+                {
+                  backgroundColor: isSavingComment
+                    ? colors.subtitle
+                    : colors.tint,
+                },
+                pressed && styles.buttonPressed,
+              ]}
+            >
+              <Text style={[styles.buttonText, { color: colors.buttonText }]}>
+                {isSavingComment ? 'Saving...' : 'Save Rating & Comment'}
+              </Text>
+            </Pressable>
+          </>
+        )}
+      </View>
+
+      {/* Existing Comments from other teams */}
+      <View
+        style={[
+          styles.card,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+          },
+        ]}
+      >
+        <Text style={[styles.cardTitle, { color: colors.text }]}>
+          What Other Teams Said
+        </Text>
+
+        {loadingComments ? (
+          <ActivityIndicator size="small" color={colors.tint} />
+        ) : existingComments.length === 0 ? (
+          <Text style={[styles.emptyText, { color: colors.subtitle }]}>
+            No comments yet. Be the first to rate this activity.
+          </Text>
+        ) : (
+          existingComments.map((item) => (
+            <View
+              key={item.id}
+              style={[styles.commentRow, { borderColor: colors.border }]}
+            >
+              <View style={styles.commentHeader}>
+                <Text style={[styles.commentRating, { color: colors.tint }]}>
+                  {'★'.repeat(item.rating)}
+                  {'☆'.repeat(5 - item.rating)}
+                </Text>
+
+                <Text style={[styles.commentDate, { color: colors.subtitle }]}>
+                  {formatDate(item.createdAt)}
+                </Text>
+              </View>
+
+              <Text style={[styles.commentText, { color: colors.text }]}>
+                {item.comment}
+              </Text>
+            </View>
+          ))
+        )}
+      </View>
+
+      {/* Action Buttons */}
       <View style={styles.buttonGroup}>
         <Pressable
           onPress={openLeaderboard}
@@ -349,6 +579,48 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 15,
     fontWeight: '700',
+  },
+  commentInput: {
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 14,
+    fontSize: 15,
+    minHeight: 90,
+    textAlignVertical: 'top',
+    marginBottom: 12,
+  },
+  savedText: {
+    fontSize: 15,
+    fontWeight: '900',
+    textAlign: 'center',
+    marginVertical: 8,
+  },
+  emptyText: {
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  commentRow: {
+    borderTopWidth: 1,
+    paddingTop: 12,
+    marginTop: 12,
+  },
+  commentHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  commentRating: {
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  commentDate: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  commentText: {
+    fontSize: 15,
+    lineHeight: 22,
   },
   buttonGroup: {
     gap: 12,
