@@ -16,7 +16,7 @@ import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
 import { saveActivityResult } from '@/utils/activityResultsDb';
 
-const FAN_DEMO_IMAGE = require('../assets/images/fan-demo.png');
+const FAN_DEMO_IMAGE = require('../assets/images/activity 3.png');
 
 type TabKey = 'activity' | 'writeup' | 'discussion';
 

@@ -42,13 +42,8 @@
   
   "expo-font",
   "expo-web-browser",
-  "expo-sqlite",
-  [
-    "expo-audio",
-    {
-      "microphonePermission": "Allow STEMM Lab to access your microphone."
-    }
-  ]
+  "expo-sqlite"
+  
 ],
   "experiments": {
       "typedRoutes": true,
