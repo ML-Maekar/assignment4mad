@@ -13,7 +13,9 @@ import {
 
 import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
+import { usePermissions } from '@/contexts/PermissionsContext';
 import { saveAttempt } from '@/services/attemptService';
+import { scheduleActivityCompleteNotification } from '@/utils/notifications';
 
 const SOUND_DEMO_IMAGE = require('../assets/images/activity 2.png');
 
@@ -73,11 +75,12 @@ function getSoundRisk(db: number) {
 
 export default function ActivityTwoGame() {
   const { colors } = useAppTheme();
+  const { micGranted } = usePermissions();
 
   const recordingRef = useRef<Audio.Recording | null>(null);
 
   const [activeTab, setActiveTab] = useState<TabKey>('activity');
-  const [hasPermission, setHasPermission] = useState(false);
+  const [hasSystemPermission, setHasSystemPermission] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -93,38 +96,47 @@ export default function ActivityTwoGame() {
   const [maxDb, setMaxDb] = useState(0);
   const [savedResultId, setSavedResultId] = useState<number | null>(null);
   const [lastResult, setLastResult] = useState<Result | null>(null);
-
-  // Results table — multiple recordings per session
   const [sessionResults, setSessionResults] = useState<Result[]>([]);
 
+  // Load system-level mic permission on mount
   useEffect(() => {
-    async function requestPermission() {
+    async function checkSystemPermission() {
       const permission = await Audio.requestPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert('Microphone Permission Needed', 'Please allow microphone access to record sound.');
-        setHasPermission(false);
-        return;
-      }
-      setHasPermission(true);
+      setHasSystemPermission(permission.granted);
     }
-    requestPermission();
+    checkSystemPermission();
   }, []);
 
   const startRecording = async () => {
-    try {
-      if (!hasPermission) {
-        Alert.alert('Permission Missing', 'Microphone permission is required.');
-        return;
-      }
-      if (!actionName.trim()) {
-        Alert.alert('Missing Action', 'Please enter the action or object tested.');
-        return;
-      }
-      if (!location.trim()) {
-        Alert.alert('Missing Location', 'Please enter where the sound was measured.');
-        return;
-      }
+    // Check app-level permission from Settings first
+    if (!micGranted) {
+      Alert.alert(
+        'Microphone Disabled',
+        'Microphone is turned off in Settings. Go to Settings → Permissions → Microphone to enable it.'
+      );
+      return;
+    }
 
+    // Check system-level permission
+    if (!hasSystemPermission) {
+      const permission = await Audio.requestPermissionsAsync();
+      setHasSystemPermission(permission.granted);
+      if (!permission.granted) {
+        Alert.alert('Microphone Permission Needed', 'Please allow microphone access to record sound.');
+        return;
+      }
+    }
+
+    if (!actionName.trim()) {
+      Alert.alert('Missing Action', 'Please enter the action or object tested.');
+      return;
+    }
+    if (!location.trim()) {
+      Alert.alert('Missing Location', 'Please enter where the sound was measured.');
+      return;
+    }
+
+    try {
       setCurrentDb(null);
       setMaxDb(0);
       setSavedResultId(null);
@@ -237,6 +249,8 @@ export default function ActivityTwoGame() {
       setLastResult(savedResult);
       setSessionResults((current) => [savedResult, ...current]);
 
+      await scheduleActivityCompleteNotification(ACTIVITY_TITLE, finalDb);
+
       Alert.alert(
         'Sound Result Saved',
         `Maximum Sound: ${finalDb.toFixed(1)} dB\n${soundRisk.risk}`,
@@ -273,7 +287,6 @@ export default function ActivityTwoGame() {
   const displayDb = isRecording ? currentDb : maxDb > 0 ? maxDb : null;
   const displayedRisk = maxDb > 0 ? getSoundRisk(maxDb) : null;
 
-  // ─── Tab renderer ─────────────────────────────────────────────
   const renderTabs = () => {
     const tabs: { key: TabKey; label: string }[] = [
       { key: 'activity', label: 'Activity' },
@@ -305,31 +318,27 @@ export default function ActivityTwoGame() {
     );
   };
 
-  // ─── Activity Tab ──────────────────────────────────────────────
   const renderActivityTab = () => (
     <View style={[styles.phoneLayoutCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+
+      {/* Mic permission warning banner */}
+      {!micGranted && (
+        <View style={[styles.warningBanner, { backgroundColor: `${colors.danger}15`, borderColor: colors.danger }]}>
+          <Text style={[styles.warningText, { color: colors.danger }]}>
+            ⚠️ Microphone is disabled. Go to Settings → Permissions → Microphone to enable recording.
+          </Text>
+        </View>
+      )}
 
       <Text style={[styles.cardTitle, { color: colors.text }]}>Instructions</Text>
 
       <View style={[styles.instructionBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          1. Position the phone about 30 cm from the sound source.
-        </Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          2. Enter the action or object name and location below.
-        </Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          3. Press Start Recording, make the sound, then press Stop.
-        </Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          4. Try different actions: drop a pen, book, bottle, stamp feet, clap.
-        </Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          5. Compare sounds — which was louder or softer than expected?
-        </Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          6. Rotate for each team member.
-        </Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>1. Position the phone about 30 cm from the sound source.</Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>2. Enter the action or object name and location below.</Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>3. Press Start Recording, make the sound, then press Stop.</Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>4. Try different actions: drop a pen, book, bottle, stamp feet, clap.</Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>5. Compare sounds — which was louder or softer than expected?</Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>6. Rotate for each team member.</Text>
       </View>
 
       <Image source={SOUND_DEMO_IMAGE} style={styles.demoImage} resizeMode="contain" />
@@ -370,12 +379,24 @@ export default function ActivityTwoGame() {
           disabled={isSaving}
           style={({ pressed }) => [
             styles.button,
-            { backgroundColor: isRecording ? colors.danger : colors.tint },
+            {
+              backgroundColor: !micGranted
+                ? colors.subtitle
+                : isRecording
+                  ? colors.danger
+                  : colors.tint,
+            },
             pressed && styles.buttonPressed,
           ]}
         >
           <Text style={[styles.buttonText, { color: colors.buttonText }]}>
-            {isSaving ? 'Saving...' : isRecording ? 'Stop Recording' : 'Start Recording'}
+            {isSaving
+              ? 'Saving...'
+              : !micGranted
+                ? 'Mic Disabled'
+                : isRecording
+                  ? 'Stop Recording'
+                  : 'Start Recording'}
           </Text>
         </Pressable>
       ) : (
@@ -399,7 +420,6 @@ export default function ActivityTwoGame() {
         </>
       )}
 
-      {/* Session results table */}
       {sessionResults.length > 0 && (
         <View style={[styles.resultsBox, { borderColor: colors.border }]}>
           <Text style={[styles.cardTitle, { color: colors.text }]}>Session Results</Text>
@@ -412,15 +432,9 @@ export default function ActivityTwoGame() {
             </View>
             {sessionResults.map((r) => (
               <View key={r.id} style={[styles.tableRow, { borderColor: colors.border }]}>
-                <Text style={[styles.tableCell, { color: colors.text, flex: 2 }]} numberOfLines={2}>
-                  {r.actionName}
-                </Text>
-                <Text style={[styles.tableCell, { color: colors.success, flex: 1 }]}>
-                  {r.maxDb.toFixed(1)}
-                </Text>
-                <Text style={[styles.tableCell, { color: colors.subtitle, flex: 2 }]} numberOfLines={2}>
-                  {r.risk}
-                </Text>
+                <Text style={[styles.tableCell, { color: colors.text, flex: 2 }]} numberOfLines={2}>{r.actionName}</Text>
+                <Text style={[styles.tableCell, { color: colors.success, flex: 1 }]}>{r.maxDb.toFixed(1)}</Text>
+                <Text style={[styles.tableCell, { color: colors.subtitle, flex: 2 }]} numberOfLines={2}>{r.risk}</Text>
               </View>
             ))}
           </View>
@@ -431,7 +445,6 @@ export default function ActivityTwoGame() {
     </View>
   );
 
-  // ─── Write-up Tab ──────────────────────────────────────────────
   const renderWriteUpTab = () => (
     <View style={[styles.phoneLayoutCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <Text style={[styles.cardTitle, { color: colors.text }]}>Write Up</Text>
@@ -453,7 +466,6 @@ export default function ActivityTwoGame() {
         style={[styles.input, styles.multilineInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
       />
 
-      {/* Results table */}
       <Text style={[styles.label, { color: colors.text }]}>Results Table</Text>
 
       <View style={[styles.tableBox, { borderColor: colors.border, backgroundColor: colors.background }]}>
@@ -469,15 +481,9 @@ export default function ActivityTwoGame() {
         ) : (
           sessionResults.map((r) => (
             <View key={r.id} style={[styles.tableRow, { borderColor: colors.border }]}>
-              <Text style={[styles.tableCell, { color: colors.text, flex: 2 }]} numberOfLines={2}>
-                {r.actionName}
-              </Text>
-              <Text style={[styles.tableCell, { color: colors.success, flex: 1 }]}>
-                {r.maxDb.toFixed(1)}
-              </Text>
-              <Text style={[styles.tableCell, { color: colors.subtitle, flex: 1 }]} numberOfLines={2}>
-                {r.range}
-              </Text>
+              <Text style={[styles.tableCell, { color: colors.text, flex: 2 }]} numberOfLines={2}>{r.actionName}</Text>
+              <Text style={[styles.tableCell, { color: colors.success, flex: 1 }]}>{r.maxDb.toFixed(1)}</Text>
+              <Text style={[styles.tableCell, { color: colors.subtitle, flex: 1 }]} numberOfLines={2}>{r.range}</Text>
             </View>
           ))
         )}
@@ -537,7 +543,6 @@ export default function ActivityTwoGame() {
     </View>
   );
 
-  // ─── Discussion Tab ────────────────────────────────────────────
   const renderDiscussionTab = () => (
     <View style={[styles.phoneLayoutCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <Text style={[styles.cardTitle, { color: colors.text }]}>Discussion</Text>
@@ -553,7 +558,6 @@ export default function ActivityTwoGame() {
         <Text style={[styles.discussionHeading, { color: colors.text }]}>
           Sound Levels and Hearing Damage Risk
         </Text>
-
         <View style={[styles.tableBox, { borderColor: colors.border, backgroundColor: colors.background }]}>
           {[
             ['0–30 dB', 'Whisper, quiet library', 'No risk'],
@@ -606,22 +610,14 @@ export default function ActivityTwoGame() {
 
       <Pressable
         onPress={() => router.push('/result-history?activityKey=activity-two' as never)}
-        style={({ pressed }) => [
-          styles.secondaryButton,
-          { borderColor: colors.tint },
-          pressed && styles.buttonPressed,
-        ]}
+        style={({ pressed }) => [styles.secondaryButton, { borderColor: colors.tint }, pressed && styles.buttonPressed]}
       >
         <Text style={[styles.secondaryButtonText, { color: colors.tint }]}>Open Result History</Text>
       </Pressable>
 
       <Pressable
         onPress={() => router.push('/leaderboard?activityKey=activity-two' as never)}
-        style={({ pressed }) => [
-          styles.secondaryButton,
-          { borderColor: colors.tint },
-          pressed && styles.buttonPressed,
-        ]}
+        style={({ pressed }) => [styles.secondaryButton, { borderColor: colors.tint }, pressed && styles.buttonPressed]}
       >
         <Text style={[styles.secondaryButtonText, { color: colors.tint }]}>View Leaderboard</Text>
       </Pressable>
@@ -650,81 +646,30 @@ const styles = StyleSheet.create({
   header: { marginBottom: 20 },
   title: { fontSize: 32, fontWeight: '900' },
   subtitle: { marginTop: 8, fontSize: 16, lineHeight: 22 },
-  phoneLayoutCard: {
-    borderWidth: 2,
-    borderRadius: 24,
-    padding: 18,
-    marginBottom: 16,
-    minHeight: 620,
-  },
+  phoneLayoutCard: { borderWidth: 2, borderRadius: 24, padding: 18, marginBottom: 16, minHeight: 620 },
   cardTitle: { fontSize: 20, fontWeight: '900', marginBottom: 12 },
   label: { fontSize: 15, fontWeight: '800', marginBottom: 8, marginTop: 4 },
   body: { fontSize: 15, lineHeight: 22 },
-  instructionBox: {
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 16,
-    gap: 6,
-  },
+  warningBanner: { borderWidth: 1, borderRadius: 14, padding: 12, marginBottom: 14 },
+  warningText: { fontSize: 14, fontWeight: '700', lineHeight: 20 },
+  instructionBox: { borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 16, gap: 6 },
   demoImage: { width: '100%', height: 260, marginBottom: 18 },
-  bottomTabRow: {
-    marginTop: 'auto',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    borderTopWidth: 1,
-    paddingTop: 12,
-    gap: 4,
-  },
+  bottomTabRow: { marginTop: 'auto', flexDirection: 'row', justifyContent: 'center', borderTopWidth: 1, paddingTop: 12, gap: 4 },
   bottomTabButton: { paddingHorizontal: 6, paddingBottom: 4, borderBottomWidth: 2 },
   bottomTabText: { fontSize: 13, fontWeight: '700' },
-  input: {
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 14,
-    fontSize: 15,
-    marginBottom: 12,
-  },
+  input: { borderWidth: 1, borderRadius: 14, padding: 14, fontSize: 15, marginBottom: 12 },
   multilineInput: { minHeight: 80, textAlignVertical: 'top' },
-  meterBox: {
-    borderWidth: 1,
-    borderRadius: 18,
-    padding: 16,
-    marginBottom: 14,
-  },
+  meterBox: { borderWidth: 1, borderRadius: 18, padding: 16, marginBottom: 14 },
   meterLabel: { fontSize: 13, fontWeight: '700', marginBottom: 6 },
   dbText: { fontSize: 42, fontWeight: '900', marginBottom: 8 },
-  tableBox: {
-    borderWidth: 1,
-    borderRadius: 14,
-    marginBottom: 14,
-    overflow: 'hidden',
-  },
-  tableRow: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-  },
+  tableBox: { borderWidth: 1, borderRadius: 14, marginBottom: 14, overflow: 'hidden' },
+  tableRow: { flexDirection: 'row', borderBottomWidth: 1, paddingHorizontal: 10, paddingVertical: 10 },
   tableHeader: { fontSize: 13, fontWeight: '900' },
   tableCell: { fontSize: 13, fontWeight: '600' },
   tableRange: { fontSize: 13, fontWeight: '900' },
   tableText: { marginTop: 3, fontSize: 13, lineHeight: 18 },
-  button: {
-    minHeight: 56,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  secondaryButton: {
-    minHeight: 48,
-    borderRadius: 16,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 10,
-  },
+  button: { minHeight: 56, borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginTop: 8 },
+  secondaryButton: { minHeight: 48, borderRadius: 16, borderWidth: 1, justifyContent: 'center', alignItems: 'center', marginTop: 10 },
   buttonPressed: { transform: [{ scale: 0.98 }], opacity: 0.85 },
   buttonText: { fontSize: 16, fontWeight: '900' },
   secondaryButtonText: { fontSize: 15, fontWeight: '900' },
@@ -733,12 +678,6 @@ const styles = StyleSheet.create({
   resultTitle: { fontSize: 16, fontWeight: '900', marginBottom: 4 },
   score: { marginTop: 4, fontSize: 15, fontWeight: '900' },
   resultsBox: { borderTopWidth: 1, paddingTop: 14, marginTop: 14 },
-  discussionBox: {
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 12,
-    gap: 6,
-  },
+  discussionBox: { borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 12, gap: 6 },
   discussionHeading: { fontSize: 16, fontWeight: '900', marginBottom: 6 },
 });

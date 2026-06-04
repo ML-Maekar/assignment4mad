@@ -13,6 +13,7 @@ import {
 import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
 import { findTeamByDiscriminator, saveTeamSetup } from '@/services/teamService';
+import { requestLocationPermission } from '@/utils/locationService';
 import { saveLocalTeamProfile } from '@/utils/teamProfileStorage';
 
 const MAX_TEAM_MEMBERS = 10;
@@ -24,12 +25,17 @@ function createTeamDiscriminator() {
   return `STEMM-${randomNumber}`;
 }
 
+// Ask for GPS permission after team setup
+// Silent if denied — location just won't be tagged on results
+async function askForLocationAfterSetup() {
+  await requestLocationPermission();
+}
+
 export default function TeamSetupScreen() {
   const { colors } = useAppTheme();
 
   const [activeTab, setActiveTab] = useState<TabKey>('create');
 
-  // ─── Create Team state ────────────────────────────────────────
   const [teamName, setTeamName] = useState('');
   const [memberCount, setMemberCount] = useState('2');
   const [memberNames, setMemberNames] = useState(['', '']);
@@ -37,7 +43,6 @@ export default function TeamSetupScreen() {
   const [teamDiscriminator] = useState(createTeamDiscriminator());
   const [isSaving, setIsSaving] = useState(false);
 
-  // ─── Join Team state ──────────────────────────────────────────
   const [joinCode, setJoinCode] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [foundTeam, setFoundTeam] = useState<{
@@ -77,7 +82,6 @@ export default function TeamSetupScreen() {
     });
   };
 
-  // ─── Create Team ──────────────────────────────────────────────
   const saveTeam = async () => {
     const cleanTeamName = teamName.trim();
     const cleanGradeLevel = gradeLevel.trim();
@@ -132,7 +136,12 @@ export default function TeamSetupScreen() {
         [
           {
             text: 'Continue',
-            onPress: () => router.replace('/(tabs)/home' as never),
+            onPress: async () => {
+              // Ask for GPS permission after team is created
+              // Silent if denied — results save fine without location
+              await askForLocationAfterSetup();
+              router.replace('/(tabs)/home' as never);
+            },
           },
         ]
       );
@@ -144,7 +153,6 @@ export default function TeamSetupScreen() {
     }
   };
 
-  // ─── Join Team ────────────────────────────────────────────────
   const searchForTeam = async () => {
     const cleanCode = joinCode.trim().toUpperCase();
 
@@ -200,7 +208,12 @@ export default function TeamSetupScreen() {
         [
           {
             text: 'Continue',
-            onPress: () => router.replace('/(tabs)/home' as never),
+            onPress: async () => {
+              // Ask for GPS permission after joining team
+              // Silent if denied — results save fine without location
+              await askForLocationAfterSetup();
+              router.replace('/(tabs)/home' as never);
+            },
           },
         ]
       );
@@ -212,7 +225,6 @@ export default function TeamSetupScreen() {
     }
   };
 
-  // ─── Tab renderer ─────────────────────────────────────────────
   const renderTabs = () => (
     <View style={[styles.tabRow, { borderBottomColor: colors.border }]}>
       {([
@@ -235,12 +247,7 @@ export default function TeamSetupScreen() {
               },
             ]}
           >
-            <Text
-              style={[
-                styles.tabText,
-                { color: selected ? colors.tint : colors.subtitle },
-              ]}
-            >
+            <Text style={[styles.tabText, { color: selected ? colors.tint : colors.subtitle }]}>
               {tab.label}
             </Text>
           </Pressable>
@@ -249,7 +256,6 @@ export default function TeamSetupScreen() {
     </View>
   );
 
-  // ─── Create Team tab ──────────────────────────────────────────
   const renderCreateTab = () => (
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <Text style={[styles.cardTitle, { color: colors.text }]}>Create Your Team</Text>
@@ -294,7 +300,6 @@ export default function TeamSetupScreen() {
         style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
       />
 
-      {/* Team discriminator */}
       <View style={[styles.discriminatorBox, { borderColor: colors.tint, backgroundColor: `${colors.tint}10` }]}>
         <Text style={[styles.discriminatorLabel, { color: colors.subtitle }]}>
           Your Team Code — share this with your team
@@ -327,7 +332,6 @@ export default function TeamSetupScreen() {
     </View>
   );
 
-  // ─── Join Team tab ────────────────────────────────────────────
   const renderJoinTab = () => (
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <Text style={[styles.cardTitle, { color: colors.text }]}>Join Existing Team</Text>
@@ -366,34 +370,17 @@ export default function TeamSetupScreen() {
         {isSearching ? (
           <ActivityIndicator color={colors.buttonText} />
         ) : (
-          <Text style={[styles.buttonText, { color: colors.buttonText }]}>
-            Find Team
-          </Text>
+          <Text style={[styles.buttonText, { color: colors.buttonText }]}>Find Team</Text>
         )}
       </Pressable>
 
-      {/* Found team details */}
       {foundTeam && (
         <View style={[styles.foundTeamBox, { borderColor: colors.success, backgroundColor: `${colors.success}10` }]}>
-          <Text style={[styles.foundTeamTitle, { color: colors.success }]}>
-            ✓ Team Found
-          </Text>
-
-          <Text style={[styles.foundTeamName, { color: colors.text }]}>
-            {foundTeam.teamName}
-          </Text>
-
-          <Text style={[styles.body, { color: colors.subtitle }]}>
-            Grade: {foundTeam.gradeLevel}
-          </Text>
-
-          <Text style={[styles.body, { color: colors.subtitle }]}>
-            Members: {foundTeam.memberNames.join(', ')}
-          </Text>
-
-          <Text style={[styles.body, { color: colors.subtitle }]}>
-            Code: {foundTeam.teamDiscriminator}
-          </Text>
+          <Text style={[styles.foundTeamTitle, { color: colors.success }]}>✓ Team Found</Text>
+          <Text style={[styles.foundTeamName, { color: colors.text }]}>{foundTeam.teamName}</Text>
+          <Text style={[styles.body, { color: colors.subtitle }]}>Grade: {foundTeam.gradeLevel}</Text>
+          <Text style={[styles.body, { color: colors.subtitle }]}>Members: {foundTeam.memberNames.join(', ')}</Text>
+          <Text style={[styles.body, { color: colors.subtitle }]}>Code: {foundTeam.teamDiscriminator}</Text>
 
           <Pressable
             onPress={joinFoundTeam}
@@ -417,9 +404,7 @@ export default function TeamSetupScreen() {
               pressed && styles.buttonPressed,
             ]}
           >
-            <Text style={[styles.secondaryButtonText, { color: colors.text }]}>
-              Search Again
-            </Text>
+            <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Search Again</Text>
           </Pressable>
         </View>
       )}
@@ -447,79 +432,25 @@ const styles = StyleSheet.create({
   header: { marginBottom: 20 },
   title: { fontSize: 32, fontWeight: '900' },
   subtitle: { marginTop: 8, fontSize: 16, lineHeight: 22 },
-  tabRow: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    marginBottom: 20,
-  },
-  tabButton: {
-    flex: 1,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
+  tabRow: { flexDirection: 'row', borderBottomWidth: 1, marginBottom: 20 },
+  tabButton: { flex: 1, paddingVertical: 14, alignItems: 'center' },
   tabText: { fontSize: 15, fontWeight: '800' },
-  card: {
-    borderWidth: 1,
-    borderRadius: 22,
-    padding: 18,
-    marginBottom: 16,
-  },
+  card: { borderWidth: 1, borderRadius: 22, padding: 18, marginBottom: 16 },
   cardTitle: { fontSize: 20, fontWeight: '900', marginBottom: 10 },
   body: { fontSize: 15, lineHeight: 22 },
-  input: {
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 14,
-    fontSize: 15,
-    marginBottom: 12,
-  },
-  instructionBox: {
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 14,
-    gap: 6,
-  },
-  discriminatorBox: {
-    borderWidth: 2,
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 14,
-  },
+  input: { borderWidth: 1, borderRadius: 14, padding: 14, fontSize: 15, marginBottom: 12 },
+  instructionBox: { borderWidth: 1, borderRadius: 14, padding: 14, marginBottom: 14, gap: 6 },
+  discriminatorBox: { borderWidth: 2, borderRadius: 16, padding: 14, marginBottom: 14 },
   discriminatorLabel: { fontSize: 13, fontWeight: '700', marginBottom: 4 },
   discriminatorValue: { fontSize: 24, fontWeight: '900', marginBottom: 6 },
   helperText: { fontSize: 13, lineHeight: 18, marginBottom: 12 },
-  button: {
-    minHeight: 56,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  joinButton: {
-    minHeight: 52,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 14,
-  },
-  secondaryButton: {
-    minHeight: 48,
-    borderRadius: 16,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 10,
-  },
+  button: { minHeight: 56, borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginTop: 4 },
+  joinButton: { minHeight: 52, borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginTop: 14 },
+  secondaryButton: { minHeight: 48, borderRadius: 16, borderWidth: 1, justifyContent: 'center', alignItems: 'center', marginTop: 10 },
   buttonPressed: { transform: [{ scale: 0.98 }], opacity: 0.85 },
   buttonText: { fontSize: 16, fontWeight: '900' },
   secondaryButtonText: { fontSize: 15, fontWeight: '900' },
-  foundTeamBox: {
-    borderWidth: 2,
-    borderRadius: 18,
-    padding: 16,
-    marginTop: 16,
-  },
+  foundTeamBox: { borderWidth: 2, borderRadius: 18, padding: 16, marginTop: 16 },
   foundTeamTitle: { fontSize: 16, fontWeight: '900', marginBottom: 8 },
   foundTeamName: { fontSize: 22, fontWeight: '900', marginBottom: 6 },
 });

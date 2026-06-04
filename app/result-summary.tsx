@@ -24,11 +24,7 @@ import {
 
 function formatDate(value: string) {
   const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
+  if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
 }
 
@@ -49,8 +45,16 @@ function getGameRoute(activityKey: string) {
     reaction: '/activity-six-game',
     breathing: '/activity-seven-game',
   };
-
   return routes[activityKey] ?? '/(tabs)/home';
+}
+
+function formatLocation(location: any): string | null {
+  if (!location) return null;
+  if (location.address) return location.address;
+  if (location.latitude && location.longitude) {
+    return `${Number(location.latitude).toFixed(4)}, ${Number(location.longitude).toFixed(4)}`;
+  }
+  return null;
 }
 
 function renderStars(
@@ -62,17 +66,8 @@ function renderStars(
   return (
     <View style={starStyles.row}>
       {[1, 2, 3, 4, 5].map((star) => (
-        <Pressable
-          key={star}
-          onPress={() => onPress(star)}
-          style={starStyles.star}
-        >
-          <Text
-            style={[
-              starStyles.starText,
-              { color: star <= rating ? tintColor : borderColor },
-            ]}
-          >
+        <Pressable key={star} onPress={() => onPress(star)} style={starStyles.star}>
+          <Text style={[starStyles.starText, { color: star <= rating ? tintColor : borderColor }]}>
             ★
           </Text>
         </Pressable>
@@ -82,18 +77,9 @@ function renderStars(
 }
 
 const starStyles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    gap: 8,
-    marginVertical: 10,
-  },
-  star: {
-    padding: 4,
-  },
-  starText: {
-    fontSize: 36,
-    fontWeight: '900',
-  },
+  row: { flexDirection: 'row', gap: 8, marginVertical: 10 },
+  star: { padding: 4 },
+  starText: { fontSize: 36, fontWeight: '900' },
 });
 
 export default function ResultSummaryScreen() {
@@ -109,7 +95,6 @@ export default function ResultSummaryScreen() {
   const [result, setResult] = useState<ActivityResultRecord | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Comments and ratings state
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
   const [isSavingComment, setIsSavingComment] = useState(false);
@@ -118,16 +103,35 @@ export default function ResultSummaryScreen() {
   const [loadingComments, setLoadingComments] = useState(false);
 
   const extraData = useMemo(() => {
-    if (!result?.dataJson) {
-      return {};
-    }
-
+    if (!result?.dataJson) return {};
     try {
       return JSON.parse(result.dataJson) as Record<string, unknown>;
     } catch {
       return {};
     }
   }, [result]);
+
+  const locationText = useMemo(() => {
+    return formatLocation(extraData.location);
+  }, [extraData]);
+
+  const teamName = useMemo(() => {
+    return (extraData.teamName as string) ?? null;
+  }, [extraData]);
+
+  const filteredExtraData = useMemo(() => {
+    const excluded = new Set([
+      'location',
+      'savedWriteUps',
+      'videoUri',
+      'photoUri',
+      'playbackRate',
+      'videoZoom',
+      'teamName',
+      'teamDiscriminator',
+    ]);
+    return Object.entries(extraData).filter(([key]) => !excluded.has(key));
+  }, [extraData]);
 
   useEffect(() => {
     async function loadResult() {
@@ -136,7 +140,6 @@ export default function ResultSummaryScreen() {
           setResult(null);
           return;
         }
-
         const savedResult = await getActivityResultById(resultId);
         setResult(savedResult);
       } catch (error) {
@@ -146,15 +149,11 @@ export default function ResultSummaryScreen() {
         setLoading(false);
       }
     }
-
     loadResult();
   }, [resultId]);
 
-  // Load existing comments when result loads
   useEffect(() => {
-    if (!result?.activityKey) {
-      return;
-    }
+    if (!result?.activityKey) return;
 
     async function loadComments() {
       try {
@@ -167,7 +166,6 @@ export default function ResultSummaryScreen() {
         setLoadingComments(false);
       }
     }
-
     loadComments();
   }, [result]);
 
@@ -176,32 +174,23 @@ export default function ResultSummaryScreen() {
       Alert.alert('Rating Required', 'Please tap a star to give a rating.');
       return;
     }
-
     if (!comment.trim()) {
       Alert.alert('Comment Required', 'Please write a short comment.');
       return;
     }
-
-    if (!result) {
-      return;
-    }
+    if (!result) return;
 
     try {
       setIsSavingComment(true);
-
       await saveCommentRating({
         activityKey: result.activityKey,
         activityTitle: result.activityTitle,
         rating,
         comment,
       });
-
       setCommentSaved(true);
-
-      // Reload comments to show the new one
       const updated = await getCommentsRatingsByActivity(result.activityKey);
       setExistingComments(updated);
-
       Alert.alert('Comment Saved', 'Your rating and comment have been saved.');
     } catch (error) {
       console.log('Failed to save comment:', error);
@@ -212,10 +201,7 @@ export default function ResultSummaryScreen() {
   };
 
   const openLeaderboard = () => {
-    if (!result) {
-      return;
-    }
-
+    if (!result) return;
     router.push(`/leaderboard?activityKey=${result.activityKey}` as never);
   };
 
@@ -224,7 +210,6 @@ export default function ResultSummaryScreen() {
       router.replace('/(tabs)/home' as never);
       return;
     }
-
     router.replace(getGameRoute(result.activityKey) as never);
   };
 
@@ -232,9 +217,7 @@ export default function ResultSummaryScreen() {
     return (
       <AppScreen scroll={false} contentStyle={styles.centerContent}>
         <ActivityIndicator size="large" color={colors.tint} />
-        <Text style={[styles.loadingText, { color: colors.subtitle }]}>
-          Loading result...
-        </Text>
+        <Text style={[styles.loadingText, { color: colors.subtitle }]}>Loading result...</Text>
       </AppScreen>
     );
   }
@@ -243,26 +226,16 @@ export default function ResultSummaryScreen() {
     return (
       <AppScreen>
         <View style={styles.header}>
-          <Text style={[styles.title, { color: colors.text }]}>
-            Result Not Found
-          </Text>
+          <Text style={[styles.title, { color: colors.text }]}>Result Not Found</Text>
           <Text style={[styles.subtitle, { color: colors.subtitle }]}>
-            This result could not be loaded. It may have been deleted or the
-            result ID was missing.
+            This result could not be loaded. It may have been deleted or the result ID was missing.
           </Text>
         </View>
-
         <Pressable
           onPress={() => router.replace('/(tabs)/home' as never)}
-          style={({ pressed }) => [
-            styles.button,
-            { backgroundColor: colors.tint },
-            pressed && styles.buttonPressed,
-          ]}
+          style={({ pressed }) => [styles.button, { backgroundColor: colors.tint }, pressed && styles.buttonPressed]}
         >
-          <Text style={[styles.buttonText, { color: colors.buttonText }]}>
-            Go Home
-          </Text>
+          <Text style={[styles.buttonText, { color: colors.buttonText }]}>Go Home</Text>
         </Pressable>
       </AppScreen>
     );
@@ -271,98 +244,83 @@ export default function ResultSummaryScreen() {
   return (
     <AppScreen>
       <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>
-          Result Summary
-        </Text>
+        <Text style={[styles.title, { color: colors.text }]}>Result Summary</Text>
         <Text style={[styles.subtitle, { color: colors.subtitle }]}>
           Your activity result has been saved.
         </Text>
       </View>
 
       {/* Score Card */}
-      <View
-        style={[
-          styles.scoreCard,
-          {
-            backgroundColor: colors.card,
-            borderColor: colors.border,
-          },
-        ]}
-      >
-        <Text style={[styles.activityTitle, { color: colors.text }]}>
-          {result.activityTitle}
-        </Text>
+      <View style={[styles.scoreCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.activityTitle, { color: colors.text }]}>{result.activityTitle}</Text>
+        <Text style={[styles.label, { color: colors.subtitle }]}>{result.label}</Text>
+        <Text style={[styles.score, { color: colors.success }]}>{Math.round(result.score)}/100</Text>
+        <Text style={[styles.scoreLabel, { color: colors.subtitle }]}>Final Score</Text>
 
-        <Text style={[styles.label, { color: colors.subtitle }]}>
-          {result.label}
-        </Text>
+        {/* Team name */}
+        {teamName && (
+          <Text style={[styles.teamNameText, { color: colors.tint }]}>
+            🏷 {teamName}
+          </Text>
+        )}
 
-        <Text style={[styles.score, { color: colors.success }]}>
-          {Math.round(result.score)}/100
-        </Text>
-
-        <Text style={[styles.scoreLabel, { color: colors.subtitle }]}>
-          Final Score
-        </Text>
+        {/* GPS location */}
+        {locationText ? (
+          <Text style={[styles.locationText, { color: colors.subtitle }]}>
+            📍 {locationText}
+          </Text>
+        ) : (
+          <Text style={[styles.locationText, { color: colors.border }]}>
+            📍 Location not recorded
+          </Text>
+        )}
       </View>
 
       {/* Result Details */}
-      <View
-        style={[
-          styles.card,
-          {
-            backgroundColor: colors.card,
-            borderColor: colors.border,
-          },
-        ]}
-      >
-        <Text style={[styles.cardTitle, { color: colors.text }]}>
-          Result Details
-        </Text>
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.cardTitle, { color: colors.text }]}>Result Details</Text>
 
         <View style={styles.detailRow}>
-          <Text style={[styles.detailLabel, { color: colors.subtitle }]}>
-            Activity Key
-          </Text>
-          <Text style={[styles.detailValue, { color: colors.text }]}>
-            {result.activityKey}
-          </Text>
+          <Text style={[styles.detailLabel, { color: colors.subtitle }]}>Activity</Text>
+          <Text style={[styles.detailValue, { color: colors.text }]}>{result.activityKey}</Text>
         </View>
 
         <View style={styles.detailRow}>
-          <Text style={[styles.detailLabel, { color: colors.subtitle }]}>
-            Saved At
-          </Text>
-          <Text style={[styles.detailValue, { color: colors.text }]}>
-            {formatDate(result.createdAt)}
+          <Text style={[styles.detailLabel, { color: colors.subtitle }]}>Saved At</Text>
+          <Text style={[styles.detailValue, { color: colors.text }]}>{formatDate(result.createdAt)}</Text>
+        </View>
+
+        {teamName && (
+          <View style={styles.detailRow}>
+            <Text style={[styles.detailLabel, { color: colors.subtitle }]}>Team</Text>
+            <Text style={[styles.detailValue, { color: colors.text }]}>{teamName}</Text>
+          </View>
+        )}
+
+        <View style={styles.detailRow}>
+          <Text style={[styles.detailLabel, { color: colors.subtitle }]}>GPS Location</Text>
+          <Text style={[styles.detailValue, { color: locationText ? colors.text : colors.subtitle }]}>
+            {locationText ?? 'Not recorded'}
           </Text>
         </View>
 
-        {Object.entries(extraData).map(([key, value]) => (
+        {filteredExtraData.map(([key, value]) => (
           <View key={key} style={styles.detailRow}>
-            <Text style={[styles.detailLabel, { color: colors.subtitle }]}>
-              {key}
-            </Text>
+            <Text style={[styles.detailLabel, { color: colors.subtitle }]}>{key}</Text>
             <Text style={[styles.detailValue, { color: colors.text }]}>
-              {typeof value === 'number' ? value.toFixed(3) : String(value)}
+              {typeof value === 'number'
+                ? value.toFixed(3)
+                : typeof value === 'object'
+                  ? JSON.stringify(value)
+                  : String(value)}
             </Text>
           </View>
         ))}
       </View>
 
       {/* Comments and Ratings */}
-      <View
-        style={[
-          styles.card,
-          {
-            backgroundColor: colors.card,
-            borderColor: colors.border,
-          },
-        ]}
-      >
-        <Text style={[styles.cardTitle, { color: colors.text }]}>
-          Rate This Activity
-        </Text>
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.cardTitle, { color: colors.text }]}>Rate This Activity</Text>
 
         {commentSaved ? (
           <Text style={[styles.savedText, { color: colors.success }]}>
@@ -370,38 +328,22 @@ export default function ResultSummaryScreen() {
           </Text>
         ) : (
           <>
-            <Text style={[styles.detailLabel, { color: colors.subtitle }]}>
-              Tap to rate
-            </Text>
-
+            <Text style={[styles.detailLabel, { color: colors.subtitle }]}>Tap to rate</Text>
             {renderStars(rating, setRating, colors.tint, colors.border)}
-
             <TextInput
               value={comment}
               onChangeText={setComment}
               placeholder="Write a short comment about this activity..."
               placeholderTextColor={colors.subtitle}
               multiline
-              style={[
-                styles.commentInput,
-                {
-                  color: colors.text,
-                  borderColor: colors.border,
-                  backgroundColor: colors.background,
-                },
-              ]}
+              style={[styles.commentInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
             />
-
             <Pressable
               onPress={handleSaveComment}
               disabled={isSavingComment}
               style={({ pressed }) => [
                 styles.button,
-                {
-                  backgroundColor: isSavingComment
-                    ? colors.subtitle
-                    : colors.tint,
-                },
+                { backgroundColor: isSavingComment ? colors.subtitle : colors.tint },
                 pressed && styles.buttonPressed,
               ]}
             >
@@ -413,19 +355,9 @@ export default function ResultSummaryScreen() {
         )}
       </View>
 
-      {/* Existing Comments from other teams */}
-      <View
-        style={[
-          styles.card,
-          {
-            backgroundColor: colors.card,
-            borderColor: colors.border,
-          },
-        ]}
-      >
-        <Text style={[styles.cardTitle, { color: colors.text }]}>
-          What Other Teams Said
-        </Text>
+      {/* Existing Comments */}
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.cardTitle, { color: colors.text }]}>What Other Teams Said</Text>
 
         {loadingComments ? (
           <ActivityIndicator size="small" color={colors.tint} />
@@ -435,24 +367,16 @@ export default function ResultSummaryScreen() {
           </Text>
         ) : (
           existingComments.map((item) => (
-            <View
-              key={item.id}
-              style={[styles.commentRow, { borderColor: colors.border }]}
-            >
+            <View key={item.id} style={[styles.commentRow, { borderColor: colors.border }]}>
               <View style={styles.commentHeader}>
                 <Text style={[styles.commentRating, { color: colors.tint }]}>
-                  {'★'.repeat(item.rating)}
-                  {'☆'.repeat(5 - item.rating)}
+                  {'★'.repeat(item.rating)}{'☆'.repeat(5 - item.rating)}
                 </Text>
-
                 <Text style={[styles.commentDate, { color: colors.subtitle }]}>
                   {formatDate(item.createdAt)}
                 </Text>
               </View>
-
-              <Text style={[styles.commentText, { color: colors.text }]}>
-                {item.comment}
-              </Text>
+              <Text style={[styles.commentText, { color: colors.text }]}>{item.comment}</Text>
             </View>
           ))
         )}
@@ -462,41 +386,23 @@ export default function ResultSummaryScreen() {
       <View style={styles.buttonGroup}>
         <Pressable
           onPress={openLeaderboard}
-          style={({ pressed }) => [
-            styles.button,
-            { backgroundColor: colors.tint },
-            pressed && styles.buttonPressed,
-          ]}
+          style={({ pressed }) => [styles.button, { backgroundColor: colors.tint }, pressed && styles.buttonPressed]}
         >
-          <Text style={[styles.buttonText, { color: colors.buttonText }]}>
-            View Leaderboard
-          </Text>
+          <Text style={[styles.buttonText, { color: colors.buttonText }]}>View Leaderboard</Text>
         </Pressable>
 
         <Pressable
           onPress={tryAgain}
-          style={({ pressed }) => [
-            styles.secondaryButton,
-            { borderColor: colors.tint },
-            pressed && styles.buttonPressed,
-          ]}
+          style={({ pressed }) => [styles.secondaryButton, { borderColor: colors.tint }, pressed && styles.buttonPressed]}
         >
-          <Text style={[styles.secondaryButtonText, { color: colors.tint }]}>
-            Try Again
-          </Text>
+          <Text style={[styles.secondaryButtonText, { color: colors.tint }]}>Try Again</Text>
         </Pressable>
 
         <Pressable
           onPress={() => router.replace('/(tabs)/home' as never)}
-          style={({ pressed }) => [
-            styles.secondaryButton,
-            { borderColor: colors.border },
-            pressed && styles.buttonPressed,
-          ]}
+          style={({ pressed }) => [styles.secondaryButton, { borderColor: colors.border }, pressed && styles.buttonPressed]}
         >
-          <Text style={[styles.secondaryButtonText, { color: colors.text }]}>
-            Home
-          </Text>
+          <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Home</Text>
         </Pressable>
       </View>
     </AppScreen>
@@ -504,150 +410,35 @@ export default function ResultSummaryScreen() {
 }
 
 const styles = StyleSheet.create({
-  centerContent: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  header: {
-    marginBottom: 24,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '900',
-  },
-  subtitle: {
-    marginTop: 8,
-    fontSize: 16,
-    lineHeight: 22,
-  },
-  scoreCard: {
-    borderWidth: 1,
-    borderRadius: 26,
-    padding: 22,
-    marginBottom: 16,
-    alignItems: 'center',
-  },
-  activityTitle: {
-    fontSize: 22,
-    fontWeight: '900',
-    textAlign: 'center',
-  },
-  label: {
-    marginTop: 6,
-    fontSize: 15,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  score: {
-    marginTop: 20,
-    fontSize: 56,
-    fontWeight: '900',
-  },
-  scoreLabel: {
-    marginTop: 4,
-    fontSize: 14,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-  },
-  card: {
-    borderWidth: 1,
-    borderRadius: 22,
-    padding: 18,
-    marginBottom: 16,
-  },
-  cardTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    marginBottom: 14,
-  },
-  detailRow: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingVertical: 12,
-  },
-  detailLabel: {
-    fontSize: 13,
-    fontWeight: '800',
-    textTransform: 'capitalize',
-  },
-  detailValue: {
-    marginTop: 4,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  commentInput: {
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 14,
-    fontSize: 15,
-    minHeight: 90,
-    textAlignVertical: 'top',
-    marginBottom: 12,
-  },
-  savedText: {
-    fontSize: 15,
-    fontWeight: '900',
-    textAlign: 'center',
-    marginVertical: 8,
-  },
-  emptyText: {
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  commentRow: {
-    borderTopWidth: 1,
-    paddingTop: 12,
-    marginTop: 12,
-  },
-  commentHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  commentRating: {
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  commentDate: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  commentText: {
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  buttonGroup: {
-    gap: 12,
-  },
-  button: {
-    minHeight: 56,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  secondaryButton: {
-    minHeight: 52,
-    borderRadius: 18,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  buttonPressed: {
-    transform: [{ scale: 0.98 }],
-    opacity: 0.85,
-  },
-  buttonText: {
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  secondaryButtonText: {
-    fontSize: 16,
-    fontWeight: '900',
-  },
+  centerContent: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { marginTop: 12, fontSize: 15, fontWeight: '700' },
+  header: { marginBottom: 24 },
+  title: { fontSize: 32, fontWeight: '900' },
+  subtitle: { marginTop: 8, fontSize: 16, lineHeight: 22 },
+  scoreCard: { borderWidth: 1, borderRadius: 26, padding: 22, marginBottom: 16, alignItems: 'center' },
+  activityTitle: { fontSize: 22, fontWeight: '900', textAlign: 'center' },
+  label: { marginTop: 6, fontSize: 15, fontWeight: '700', textAlign: 'center' },
+  score: { marginTop: 20, fontSize: 56, fontWeight: '900' },
+  scoreLabel: { marginTop: 4, fontSize: 14, fontWeight: '800', textTransform: 'uppercase' },
+  teamNameText: { marginTop: 8, fontSize: 14, fontWeight: '800', textAlign: 'center' },
+  locationText: { marginTop: 6, fontSize: 13, fontWeight: '600', textAlign: 'center' },
+  card: { borderWidth: 1, borderRadius: 22, padding: 18, marginBottom: 16 },
+  cardTitle: { fontSize: 20, fontWeight: '900', marginBottom: 14 },
+  detailRow: { borderTopWidth: StyleSheet.hairlineWidth, paddingVertical: 12 },
+  detailLabel: { fontSize: 13, fontWeight: '800', textTransform: 'capitalize' },
+  detailValue: { marginTop: 4, fontSize: 15, fontWeight: '700' },
+  commentInput: { borderWidth: 1, borderRadius: 14, padding: 14, fontSize: 15, minHeight: 90, textAlignVertical: 'top', marginBottom: 12 },
+  savedText: { fontSize: 15, fontWeight: '900', textAlign: 'center', marginVertical: 8 },
+  emptyText: { fontSize: 15, lineHeight: 22 },
+  commentRow: { borderTopWidth: 1, paddingTop: 12, marginTop: 12 },
+  commentHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  commentRating: { fontSize: 18, fontWeight: '900' },
+  commentDate: { fontSize: 12, fontWeight: '600' },
+  commentText: { fontSize: 15, lineHeight: 22 },
+  buttonGroup: { gap: 12 },
+  button: { minHeight: 56, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
+  secondaryButton: { minHeight: 52, borderRadius: 18, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
+  buttonPressed: { transform: [{ scale: 0.98 }], opacity: 0.85 },
+  buttonText: { fontSize: 16, fontWeight: '900' },
+  secondaryButtonText: { fontSize: 16, fontWeight: '900' },
 });
