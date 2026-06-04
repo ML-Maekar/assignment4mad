@@ -10,7 +10,7 @@ import {
 
 import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
-import { saveActivityResult } from '@/utils/activityResultsDb';
+import { saveAttempt } from '@/services/attemptService';
 import { scheduleActivityCompleteNotification } from '@/utils/notifications';
 import {
   getOfflineDraftByKey,
@@ -174,7 +174,7 @@ export default function ActivitySixGame() {
       setMessage(`Reaction time: ${reactionTime} ms`);
 
       try {
-        const savedResultId = await saveActivityResult({
+        const savedResultId = await saveAttempt({
           activityKey: ACTIVITY_KEY,
           activityTitle: ACTIVITY_TITLE,
           label: attemptLabel,
