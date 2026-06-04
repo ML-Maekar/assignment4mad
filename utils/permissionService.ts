@@ -1,75 +1,18 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Audio } from 'expo-av';
+import * as ImagePicker from 'expo-image-picker';
 import * as Sensors from 'expo-sensors';
 import { Alert, Linking, Platform } from 'react-native';
 
-// ─── Permission types we manage ───────────────────────────────
-export type ManagedPermission = 'motion' | 'battery';
-
-// AsyncStorage keys for deny count tracking
-const DENY_COUNT_KEYS: Record<ManagedPermission, string> = {
-  motion: 'stemm_permission_deny_motion',
-  battery: 'stemm_permission_deny_battery',
-};
-
-// After this many denies we send them to phone settings
-const MAX_DENIES_BEFORE_SETTINGS = 2;
-
-// ─── Deny count helpers ───────────────────────────────────────
-async function getDenyCount(permission: ManagedPermission): Promise<number> {
-  try {
-    const value = await AsyncStorage.getItem(DENY_COUNT_KEYS[permission]);
-    return value ? parseInt(value, 10) : 0;
-  } catch {
-    return 0;
-  }
-}
-
-async function incrementDenyCount(permission: ManagedPermission): Promise<number> {
-  try {
-    const current = await getDenyCount(permission);
-    const next = current + 1;
-    await AsyncStorage.setItem(DENY_COUNT_KEYS[permission], String(next));
-    return next;
-  } catch {
-    return 1;
-  }
-}
-
-async function resetDenyCount(permission: ManagedPermission): Promise<void> {
-  try {
-    await AsyncStorage.removeItem(DENY_COUNT_KEYS[permission]);
-  } catch {}
-}
-
-// ─── Open phone settings ──────────────────────────────────────
-function openPhoneSettings(permissionLabel: string) {
-  Alert.alert(
-    `Enable ${permissionLabel} in Settings`,
-    `You have declined ${permissionLabel} permission multiple times. Please open your phone settings and enable it manually for STEMM Lab.`,
-    [
-      { text: 'Not Now', style: 'cancel' },
-      {
-        text: 'Open Settings',
-        onPress: () => Linking.openSettings(),
-      },
-    ]
-  );
-}
-
 // ─── Motion sensor permission ─────────────────────────────────
-// Android: accelerometer does NOT require system permission — it always works.
-// We use an app-level soft block stored in AsyncStorage on Android.
-// iOS: requires CoreMotion permission via expo-sensors.
-
 const MOTION_SOFT_BLOCK_KEY = 'stemm_motion_soft_blocked';
+const MOTION_DENY_KEY = 'stemm_motion_deny_count';
 
 export async function getMotionSoftBlocked(): Promise<boolean> {
   try {
     const value = await AsyncStorage.getItem(MOTION_SOFT_BLOCK_KEY);
     return value === 'true';
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 }
 
 export async function setMotionSoftBlocked(blocked: boolean): Promise<void> {
@@ -78,97 +21,87 @@ export async function setMotionSoftBlocked(blocked: boolean): Promise<void> {
   } catch {}
 }
 
-// Returns true if motion sensors are allowed to be used
+async function getMotionDenyCount(): Promise<number> {
+  try {
+    const value = await AsyncStorage.getItem(MOTION_DENY_KEY);
+    return value ? parseInt(value, 10) : 0;
+  } catch { return 0; }
+}
+
+async function incrementMotionDenyCount(): Promise<void> {
+  try {
+    const current = await getMotionDenyCount();
+    await AsyncStorage.setItem(MOTION_DENY_KEY, String(current + 1));
+  } catch {}
+}
+
+async function resetMotionDenyCount(): Promise<void> {
+  try { await AsyncStorage.removeItem(MOTION_DENY_KEY); } catch {}
+}
+
 export async function isMotionPermissionGranted(): Promise<boolean> {
   if (Platform.OS === 'android') {
-    // On Android accelerometer needs no system permission
-    // We only check our soft block
     const softBlocked = await getMotionSoftBlocked();
     return !softBlocked;
   }
-
-  // iOS — check real system permission
   try {
     const { status } = await Sensors.Accelerometer.requestPermissionsAsync();
     return status === 'granted';
-  } catch {
-    return true; // If we can't check, assume granted
-  }
+  } catch { return true; }
 }
 
-// Smart request — handles retry and go-to-settings logic
 export async function requestMotionPermission(): Promise<boolean> {
   if (Platform.OS === 'android') {
-    // Android: just un-soft-block
     const softBlocked = await getMotionSoftBlocked();
-
-    if (!softBlocked) {
-      // Already allowed
-      return true;
-    }
-
-    // Un-block it
+    if (!softBlocked) return true;
     await setMotionSoftBlocked(false);
-    await resetDenyCount('motion');
+    await resetMotionDenyCount();
     return true;
   }
 
-  // iOS: real permission flow
   try {
     const existing = await Sensors.Accelerometer.getPermissionsAsync();
-
     if (existing.status === 'granted') {
-      await resetDenyCount('motion');
+      await resetMotionDenyCount();
       return true;
     }
 
-    const denyCount = await getDenyCount('motion');
-
-    if (denyCount >= MAX_DENIES_BEFORE_SETTINGS) {
-      openPhoneSettings('Motion Sensors');
+    const denyCount = await getMotionDenyCount();
+    if (denyCount >= 2) {
+      Alert.alert(
+        'Enable Motion Sensors in Settings',
+        'You have declined motion sensor permission multiple times. Please open your phone settings and enable it manually for STEMM Lab.',
+        [
+          { text: 'Not Now', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings() },
+        ]
+      );
       return false;
     }
 
     const result = await Sensors.Accelerometer.requestPermissionsAsync();
-
     if (result.status === 'granted') {
-      await resetDenyCount('motion');
+      await resetMotionDenyCount();
       return true;
     }
 
-    await incrementDenyCount('motion');
+    await incrementMotionDenyCount();
     return false;
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 }
 
-// Called when user turns OFF the motion toggle in settings
 export async function revokeMotionPermission(): Promise<void> {
-  if (Platform.OS === 'android') {
-    await setMotionSoftBlocked(true);
-  }
-  // iOS: can't revoke system permission — user must go to Settings
-  // We just track it as a soft block on iOS too for the UI
   await setMotionSoftBlocked(true);
 }
 
 // ─── Battery permission ───────────────────────────────────────
-// expo-battery reads battery WITHOUT any system permission on both platforms.
-// Our "permission" is purely an app-level toggle.
-// When OFF: battery widget shows frozen last-known value, no live updates.
-// When ON: battery widget shows live updating value.
-
 const BATTERY_ENABLED_KEY = 'stemm_battery_enabled';
 
 export async function isBatteryPermissionGranted(): Promise<boolean> {
   try {
     const value = await AsyncStorage.getItem(BATTERY_ENABLED_KEY);
-    // Default is true (enabled) if never set
     return value !== 'false';
-  } catch {
-    return true;
-  }
+  } catch { return true; }
 }
 
 export async function setBatteryPermissionGranted(granted: boolean): Promise<void> {
@@ -177,23 +110,164 @@ export async function setBatteryPermissionGranted(granted: boolean): Promise<voi
   } catch {}
 }
 
-// Smart request — same retry pattern
-export async function requestBatteryPermission(): Promise<boolean> {
-  const denyCount = await getDenyCount('battery');
-
-  if (denyCount >= MAX_DENIES_BEFORE_SETTINGS) {
-    openPhoneSettings('Battery Status');
-    return false;
-  }
-
-  // Battery doesn't need a real system prompt — just enable it
-  await setBatteryPermissionGranted(true);
-  await resetDenyCount('battery');
-  return true;
-}
-
-// Called when user turns OFF battery toggle
 export async function revokeBatteryPermission(): Promise<void> {
   await setBatteryPermissionGranted(false);
-  await incrementDenyCount('battery');
+}
+
+// ─── Camera permission ────────────────────────────────────────
+const CAMERA_DENY_COUNT_KEY = 'stemm_camera_deny_count';
+const CAMERA_GRANTED_KEY = 'stemm_camera_granted';
+
+async function getCameraDenyCount(): Promise<number> {
+  try {
+    const value = await AsyncStorage.getItem(CAMERA_DENY_COUNT_KEY);
+    return value ? parseInt(value, 10) : 0;
+  } catch { return 0; }
+}
+
+async function incrementCameraDenyCount(): Promise<void> {
+  try {
+    const current = await getCameraDenyCount();
+    await AsyncStorage.setItem(CAMERA_DENY_COUNT_KEY, String(current + 1));
+  } catch {}
+}
+
+async function resetCameraDenyCount(): Promise<void> {
+  try { await AsyncStorage.removeItem(CAMERA_DENY_COUNT_KEY); } catch {}
+}
+
+export async function isCameraPermissionGranted(): Promise<boolean> {
+  try {
+    const value = await AsyncStorage.getItem(CAMERA_GRANTED_KEY);
+    return value === 'true';
+  } catch { return false; }
+}
+
+async function setCameraPermissionGranted(granted: boolean): Promise<void> {
+  try {
+    await AsyncStorage.setItem(CAMERA_GRANTED_KEY, granted ? 'true' : 'false');
+  } catch {}
+}
+
+export async function requestCameraPermission(): Promise<boolean> {
+  try {
+    const alreadyGranted = await isCameraPermissionGranted();
+    if (alreadyGranted) return true;
+
+    const denyCount = await getCameraDenyCount();
+
+    if (denyCount >= 2) {
+      Alert.alert(
+        'Camera Blocked',
+        'You have declined camera permission multiple times. Please open your phone settings and enable it for STEMM Lab.',
+        [
+          { text: 'Not Now', style: 'cancel' },
+          { text: 'Open Phone Settings', onPress: () => Linking.openSettings() },
+        ]
+      );
+      return false;
+    }
+
+    const result = await ImagePicker.requestCameraPermissionsAsync();
+
+    if (result.granted) {
+      await setCameraPermissionGranted(true);
+      await resetCameraDenyCount();
+      return true;
+    }
+
+    await incrementCameraDenyCount();
+
+    const newCount = await getCameraDenyCount();
+    if (newCount >= 2) {
+      Alert.alert(
+        'Camera Permission Denied',
+        'Camera access was not granted. One more denial will redirect you to phone settings.',
+        [{ text: 'OK' }]
+      );
+    }
+
+    return false;
+  } catch { return false; }
+}
+
+export async function revokeCameraPermission(): Promise<void> {
+  try {
+    await setCameraPermissionGranted(false);
+    await resetCameraDenyCount();
+  } catch {}
+}
+
+// ─── Microphone permission ────────────────────────────────────
+const MIC_DENY_COUNT_KEY = 'stemm_mic_deny_count';
+const MIC_GRANTED_KEY = 'stemm_mic_granted';
+
+async function getMicDenyCount(): Promise<number> {
+  try {
+    const value = await AsyncStorage.getItem(MIC_DENY_COUNT_KEY);
+    return value ? parseInt(value, 10) : 0;
+  } catch { return 0; }
+}
+
+async function incrementMicDenyCount(): Promise<void> {
+  try {
+    const current = await getMicDenyCount();
+    await AsyncStorage.setItem(MIC_DENY_COUNT_KEY, String(current + 1));
+  } catch {}
+}
+
+async function resetMicDenyCount(): Promise<void> {
+  try { await AsyncStorage.removeItem(MIC_DENY_COUNT_KEY); } catch {}
+}
+
+export async function isMicPermissionGranted(): Promise<boolean> {
+  try {
+    const value = await AsyncStorage.getItem(MIC_GRANTED_KEY);
+    return value === 'true';
+  } catch { return false; }
+}
+
+async function setMicPermissionGranted(granted: boolean): Promise<void> {
+  try {
+    await AsyncStorage.setItem(MIC_GRANTED_KEY, granted ? 'true' : 'false');
+  } catch {}
+}
+
+export async function requestMicPermission(): Promise<boolean> {
+  try {
+    const alreadyGranted = await isMicPermissionGranted();
+    if (alreadyGranted) return true;
+
+    const denyCount = await getMicDenyCount();
+
+    if (denyCount >= 2) {
+      Alert.alert(
+        'Microphone Blocked',
+        'You have declined microphone permission multiple times. Please open your phone settings and enable it for STEMM Lab.',
+        [
+          { text: 'Not Now', style: 'cancel' },
+          { text: 'Open Phone Settings', onPress: () => Linking.openSettings() },
+        ]
+      );
+      return false;
+    }
+
+    const result = await Audio.requestPermissionsAsync();
+
+    if (result.granted) {
+      await setMicPermissionGranted(true);
+      await resetMicDenyCount();
+      return true;
+    }
+
+    await incrementMicDenyCount();
+    return false;
+  } catch { return false; }
+}
+
+export async function revokeMicPermission(): Promise<void> {
+  try {
+    await setMicPermissionGranted(false);
+    await resetMicDenyCount();
+  } catch {}
 }

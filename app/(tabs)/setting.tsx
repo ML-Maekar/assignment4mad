@@ -67,12 +67,12 @@ const permissionOptions: PermissionOption[] = [
   {
     key: 'camera',
     title: 'Camera',
-    description: 'Used to record experiment videos and upload activity evidence.',
+    description: 'Required for Activities 1 and 3 — record video and take photos of experiments.',
   },
   {
     key: 'microphone',
     title: 'Microphone',
-    description: 'Used for the Sound Pollution Hunter activity.',
+    description: 'Required for Activity 2 — record and measure classroom sound levels.',
   },
   {
     key: 'location',
@@ -82,8 +82,7 @@ const permissionOptions: PermissionOption[] = [
   {
     key: 'motion',
     title: 'Motion Sensors',
-    description:
-      'Used for accelerometer, gyroscope, vibration and movement activities.',
+    description: 'Required for Activities 4, 5, and 7 — accelerometer, vibration and breathing.',
   },
   {
     key: 'notifications',
@@ -98,7 +97,7 @@ const permissionOptions: PermissionOption[] = [
   {
     key: 'battery',
     title: 'Battery Status',
-    description: 'Used to show device battery information across the app.',
+    description: 'Shows live battery level and charging status across the app.',
   },
   {
     key: 'backgroundTasks',
@@ -124,6 +123,14 @@ const initialPermissions: Record<PermissionKey, boolean> = {
   ads: false,
 };
 
+const CONNECTED_PERMISSIONS: PermissionKey[] = [
+  'camera',
+  'microphone',
+  'motion',
+  'battery',
+  'notifications',
+];
+
 export default function SettingScreen() {
   const { colors, themePreference, activeTheme, setThemePreference } =
     useAppTheme();
@@ -131,10 +138,16 @@ export default function SettingScreen() {
   const {
     motionGranted,
     batteryGranted,
+    cameraGranted,
+    micGranted,
     enableMotionFromSettings,
     disableMotionFromSettings,
     enableBattery,
     disableBattery,
+    enableCameraFromSettings,
+    disableCameraFromSettings,
+    enableMicFromSettings,
+    disableMicFromSettings,
   } = usePermissions();
 
   const [permissions, setPermissions] =
@@ -142,19 +155,20 @@ export default function SettingScreen() {
 
   useEffect(() => {
     async function loadPermissionStatuses() {
-      // Notifications
       const status = await getNotificationPermissionStatus();
+
       setPermissions((current) => ({
-          ...current,
-          notifications: status === 'granted',
-          // Sync motion and battery from PermissionsContext
+        ...current,
+        notifications: status === 'granted',
         motion: motionGranted,
         battery: batteryGranted,
+        camera: cameraGranted,
+        microphone: micGranted,
       }));
     }
 
     loadPermissionStatuses();
-  }, [motionGranted, batteryGranted]);
+  }, [motionGranted, batteryGranted, cameraGranted, micGranted]);
 
   const updatePermission = (key: PermissionKey, value: boolean) => {
     setPermissions((currentPermissions) => ({
@@ -297,6 +311,70 @@ export default function SettingScreen() {
             },
           ]
         );
+      }
+      return;
+    }
+
+    // Camera — connected to real permissionService
+    if (permission.key === 'camera') {
+      if (permissions.camera) {
+        Alert.alert(
+          'Turn Off Camera?',
+          'Activities 1 and 3 will not be able to record video or take photos until you turn this back on.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Turn Off',
+              style: 'destructive',
+              onPress: async () => {
+                await disableCameraFromSettings();
+                updatePermission('camera', false);
+              },
+            },
+          ]
+        );
+      } else {
+        enableCameraFromSettings().then((granted) => {
+          updatePermission('camera', granted);
+          if (granted) {
+            Alert.alert(
+              'Camera Enabled',
+              'Activities 1 and 3 can now record video and take photos.'
+            );
+          }
+        });
+      }
+      return;
+    }
+
+    // Microphone — connected to real permissionService
+    if (permission.key === 'microphone') {
+      if (permissions.microphone) {
+        Alert.alert(
+          'Turn Off Microphone?',
+          'Activity 2 (Sound Pollution Hunter) will not be able to record sound until you turn this back on.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Turn Off',
+              style: 'destructive',
+              onPress: async () => {
+                await disableMicFromSettings();
+                updatePermission('microphone', false);
+              },
+            },
+          ]
+        );
+      } else {
+        enableMicFromSettings().then((granted) => {
+          updatePermission('microphone', granted);
+          if (granted) {
+            Alert.alert(
+              'Microphone Enabled',
+              'Activity 2 can now record and measure sound.'
+            );
+          }
+        });
       }
       return;
     }
@@ -496,13 +574,15 @@ export default function SettingScreen() {
         </Text>
 
         <Text style={[styles.sectionDescription, { color: colors.subtitle }]}>
-          Notifications now connect to the phone permission system. Other
-          switches are UI placeholders until their device packages are connected.
+          Camera, Microphone, Motion Sensors, Battery, and Notifications are
+          connected to the real permission system. Toggling them here affects
+          the whole app.
         </Text>
 
         <View style={styles.permissionContainer}>
           {permissionOptions.map((permission) => {
             const enabled = permissions[permission.key];
+            const isConnected = CONNECTED_PERMISSIONS.includes(permission.key);
 
             return (
               <View
@@ -542,11 +622,21 @@ export default function SettingScreen() {
                     style={[
                       styles.permissionStatus,
                       {
-                        color: enabled ? colors.success : colors.warning,
+                        color: enabled
+                          ? colors.success
+                          : isConnected
+                            ? colors.danger
+                            : colors.subtitle,
                       },
                     ]}
                   >
-                    {enabled ? 'Enabled' : 'Off'}
+                    {enabled
+                      ? isConnected
+                        ? '● Connected'
+                        : 'Enabled'
+                      : isConnected
+                        ? '● Blocked'
+                        : 'Off'}
                   </Text>
                 </View>
 
@@ -638,9 +728,10 @@ export default function SettingScreen() {
         </Text>
 
         <Text style={[styles.infoText, { color: colors.subtitle }]}>
-          Sensor testing, notification testing, battery display and theme
-          controls are now part of the interface. Camera, microphone, GPS, media,
-          background tasks and ads will be connected later.
+          Camera, Microphone, Motion Sensors, Battery, and Notifications are
+          now fully connected to real phone permissions. Location, Media
+          Storage, Background Tasks, and Ads will be connected in a later
+          update.
         </Text>
       </View>
     </ScrollView>
