@@ -14,7 +14,7 @@ import {
   getMovementStrength,
   useSensorService,
 } from '@/hooks/useSensorService';
-import { saveActivityResult } from '@/utils/activityResultsDb';
+import { saveAttempt } from '@/services/attemptService';
 import { scheduleActivityCompleteNotification } from '@/utils/notifications';
 import {
   getOfflineDraftByKey,
@@ -179,7 +179,7 @@ export default function ActivitySevenGame() {
     setResults((currentResults) => [newResult, ...currentResults]);
 
     try {
-      const savedResultId = await saveActivityResult({
+      const savedResultId = await saveAttempt({
         activityKey: ACTIVITY_KEY,
         activityTitle: ACTIVITY_TITLE,
         label: selectedMode,

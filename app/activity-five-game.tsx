@@ -14,7 +14,7 @@ import {
   getSensorMagnitude,
   useSensorService,
 } from '@/hooks/useSensorService';
-import { saveActivityResult } from '@/utils/activityResultsDb';
+import { saveAttempt } from '@/services/attemptService';
 import { scheduleActivityCompleteNotification } from '@/utils/notifications';
 
 type Result = {
@@ -103,7 +103,7 @@ export default function ActivityFiveGame() {
     setAttemptNumber((current) => current + 1);
 
     try {
-      const savedResultId = await saveActivityResult({
+      const savedResultId = await saveAttempt({
         activityKey: ACTIVITY_KEY,
         activityTitle: ACTIVITY_TITLE,
         label: attemptName,
