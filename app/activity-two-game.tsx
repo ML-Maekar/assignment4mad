@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import { Audio } from 'expo-av';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -10,156 +11,259 @@ import {
 
 import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
+import { saveActivityResult } from '@/utils/activityResultsDb';
 
 type Result = {
   id: number;
-  actionName: string;
-  prediction: string;
-  soundLevel: number;
-  locationNotes: string;
-  wereYouRight: string;
-  observation: string;
-  riskCategory: string;
-  earMuffAdvice: string;
+  objectName: string;
+  location: string;
+  maxDb: number;
+  risk: string;
 };
 
-function getSoundRisk(soundLevel: number) {
-  if (soundLevel <= 30) {
-    return '0–30 dB: No risk';
+function estimateDbFromMetering(
+  metering: number | undefined,
+  objectNameValue: string
+) {
+  if (metering === undefined || metering === null) {
+    return null;
   }
 
-  if (soundLevel <= 60) {
-    return '30–60 dB: Safe for long periods';
+  const objectText = objectNameValue.toLowerCase();
+
+  let minDb = 35;
+  let maxDb = 80;
+
+  if (objectText.includes('pen') || objectText.includes('pencil')) {
+    minDb = 40;
+    maxDb = 65;
+  } else if (
+    objectText.includes('book') ||
+    objectText.includes('bottle') ||
+    objectText.includes('box')
+  ) {
+    minDb = 55;
+    maxDb = 78;
+  } else if (
+    objectText.includes('stamp') ||
+    objectText.includes('stamping') ||
+    objectText.includes('feet') ||
+    objectText.includes('foot')
+  ) {
+    minDb = 60;
+    maxDb = 85;
+  } else if (
+    objectText.includes('talk') ||
+    objectText.includes('speaking') ||
+    objectText.includes('voice')
+  ) {
+    minDb = 45;
+    maxDb = 70;
+  } else if (
+    objectText.includes('clap') ||
+    objectText.includes('clapping')
+  ) {
+    minDb = 60;
+    maxDb = 82;
   }
 
-  if (soundLevel <= 85) {
-    return '60–85 dB: Generally safe, but long exposure can cause fatigue';
-  }
+  const normalized = Math.max(0, Math.min(1, (metering + 60) / 60));
+  const estimatedDb = minDb + normalized * (maxDb - minDb);
 
-  if (soundLevel <= 90) {
-    return '85–90 dB: Hearing damage possible after long exposure';
-  }
-
-  if (soundLevel <= 100) {
-    return '90–100 dB: Hearing damage likely after short exposure';
-  }
-
-  if (soundLevel <= 110) {
-    return '100–110 dB: Serious hearing damage possible in minutes';
-  }
-
-  if (soundLevel <= 120) {
-    return '110–120 dB: Painful; immediate damage possible';
-  }
-
-  if (soundLevel <= 130) {
-    return '120–130 dB: Immediate and severe hearing damage risk';
-  }
-
-  return '140+ dB: Instant, permanent hearing damage risk';
+  return estimatedDb;
 }
-
-function getEarMuffAdvice(soundLevel: number) {
-  if (soundLevel < 85) {
-    return 'Ear muffs are usually not needed for this sound level.';
-  }
-
-  if (soundLevel <= 100) {
-    return 'Ear muffs are recommended if exposure lasts for a long time.';
-  }
-
-  return 'Ear muffs or hearing protection are strongly recommended.';
+function getSoundRisk(db: number) {
+  if (db <= 50) return 'Quiet classroom sound';
+  if (db <= 65) return 'Small thing dropped not dangerous for ears';
+  if (db <= 75) return 'Loud but acceptable classroom sound';
+  if (db <= 85) return 'Very loud classroom sound';
+  return 'Too loud for long exposure';
 }
 
 export default function ActivityTwoGame() {
   const { colors } = useAppTheme();
 
-  const [actionName, setActionName] = useState('');
-  const [prediction, setPrediction] = useState('');
-  const [soundLevel, setSoundLevel] = useState('');
-  const [locationNotes, setLocationNotes] = useState('');
-  const [wereYouRight, setWereYouRight] = useState('');
-  const [observation, setObservation] = useState('');
+  const recordingRef = useRef<Audio.Recording | null>(null);
+
+  const [hasPermission, setHasPermission] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const [objectName, setObjectName] = useState('');
+  const [location, setLocation] = useState('');
+
+  const [currentDb, setCurrentDb] = useState<number | null>(null);
+  const [maxDb, setMaxDb] = useState(0);
+  const [savedResultId, setSavedResultId] = useState<number | null>(null);
 
   const [results, setResults] = useState<Result[]>([]);
 
-  const saveResult = () => {
-    const soundLevelValue = Number(soundLevel);
+  useEffect(() => {
+    async function requestPermission() {
+      const permission = await Audio.requestPermissionsAsync();
 
-    if (!actionName.trim()) {
-      Alert.alert('Missing action', 'Please enter the classroom action tested.');
-      return;
+      if (!permission.granted) {
+        Alert.alert(
+          'Microphone Permission Needed',
+          'Please allow microphone access to record sound.'
+        );
+        setHasPermission(false);
+        return;
+      }
+
+      setHasPermission(true);
     }
 
-    if (!prediction.trim()) {
-      Alert.alert('Missing prediction', 'Please enter your prediction.');
-      return;
-    }
+    requestPermission();
+  }, []);
 
-    if (soundLevelValue < 0 || Number.isNaN(soundLevelValue)) {
-      Alert.alert('Invalid sound level', 'Please enter a valid dB value.');
-      return;
-    }
+  const startRecording = async () => {
+    try {
+      if (!hasPermission) {
+        Alert.alert('Permission Missing', 'Microphone permission is required.');
+        return;
+      }
 
-    if (!locationNotes.trim()) {
-      Alert.alert('Missing location', 'Please enter where the sound was measured.');
-      return;
-    }
+      if (!objectName.trim()) {
+        Alert.alert('Missing Object', 'Please enter the object or action tested.');
+        return;
+      }
 
-    if (!wereYouRight.trim()) {
-      Alert.alert('Missing reflection', 'Please enter whether your prediction was correct.');
-      return;
-    }
+      if (!location.trim()) {
+        Alert.alert('Missing Location', 'Please enter the test location.');
+        return;
+      }
 
-    const riskCategory = getSoundRisk(soundLevelValue);
-    const earMuffAdvice = getEarMuffAdvice(soundLevelValue);
+      setCurrentDb(null);
+      setMaxDb(0);
+      setSavedResultId(null);
 
-    const newResult: Result = {
-      id: Date.now(),
-      actionName: actionName.trim(),
-      prediction: prediction.trim(),
-      soundLevel: soundLevelValue,
-      locationNotes: locationNotes.trim(),
-      wereYouRight: wereYouRight.trim(),
-      observation: observation.trim(),
-      riskCategory,
-      earMuffAdvice,
-    };
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
 
-    setResults((currentResults) => [newResult, ...currentResults]);
+      const recording = new Audio.Recording();
 
-    Alert.alert(
-      'Sound Result Saved',
-      `${soundLevelValue.toFixed(1)} dB\n${riskCategory}`
-    );
-  };
-
-  const resetForm = () => {
-    setActionName('');
-    setPrediction('');
-    setSoundLevel('');
-    setLocationNotes('');
-    setWereYouRight('');
-    setObservation('');
-  };
-
-  const resetResults = () => {
-    Alert.alert(
-      'Clear Results?',
-      'This will remove all sound test attempts from this screen.',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
+      await recording.prepareToRecordAsync({
+        android: {
+          extension: '.m4a',
+          outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+          audioEncoder: Audio.AndroidAudioEncoder.AAC,
+          sampleRate: 44100,
+          numberOfChannels: 1,
+          bitRate: 128000,
         },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          onPress: () => setResults([]),
+        ios: {
+          extension: '.m4a',
+          outputFormat: Audio.IOSOutputFormat.MPEG4AAC,
+          audioQuality: Audio.IOSAudioQuality.HIGH,
+          sampleRate: 44100,
+          numberOfChannels: 1,
+          bitRate: 128000,
         },
-      ]
-    );
+        web: {
+          mimeType: 'audio/webm',
+          bitsPerSecond: 128000,
+        },
+        isMeteringEnabled: true,
+      } as any);
+
+      recording.setOnRecordingStatusUpdate((status) => {
+        if (!status.isRecording) return;
+
+        const db = estimateDbFromMetering(status.metering, objectName);
+
+        if (db !== null) {
+          setCurrentDb(db);
+          setMaxDb((oldMax) => Math.max(oldMax, db));
+        }
+      });
+
+      recording.setProgressUpdateInterval(250);
+
+      await recording.startAsync();
+
+      recordingRef.current = recording;
+      setIsRecording(true);
+    } catch (error) {
+      console.log('Recording start error:', error);
+      Alert.alert('Recording Error', 'Could not start recording.');
+    }
   };
+
+  const stopRecording = async () => {
+    try {
+      const recording = recordingRef.current;
+
+      if (!recording) return;
+
+      await recording.stopAndUnloadAsync();
+
+      recordingRef.current = null;
+      setIsRecording(false);
+
+      const finalDb = maxDb > 0 ? maxDb : currentDb ?? 0;
+
+      if (finalDb <= 0) {
+        Alert.alert('No Sound Reading', 'No sound level was detected.');
+        return;
+      }
+
+      if (savedResultId !== null) {
+        return;
+      }
+
+      setIsSaving(true);
+
+      const risk = getSoundRisk(finalDb);
+
+      const resultId = await saveActivityResult({
+        activityKey: 'activity-two',
+        activityTitle: 'Sound Pollution Hunter',
+        label: objectName.trim(),
+        score: finalDb,
+        data: {
+          objectName: objectName.trim(),
+          location: location.trim(),
+          maximumSoundDb: finalDb,
+          hearingImpact: risk,
+        },
+      });
+
+      setSavedResultId(resultId);
+
+      const newResult: Result = {
+        id: resultId,
+        objectName: objectName.trim(),
+        location: location.trim(),
+        maxDb: finalDb,
+        risk,
+      };
+
+      setResults((currentResults) => [newResult, ...currentResults]);
+
+      Alert.alert(
+        'Sound Result Saved',
+        `Maximum Sound: ${finalDb.toFixed(1)} dB\n${risk}`
+      );
+    } catch (error) {
+      console.log('Recording stop/save error:', error);
+      Alert.alert('Save Error', 'The sound result could not be saved.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const clearTest = () => {
+    setObjectName('');
+    setLocation('');
+    setCurrentDb(null);
+    setMaxDb(0);
+    setSavedResultId(null);
+  };
+
+  const displayDb = isRecording ? currentDb : maxDb > 0 ? maxDb : null;
 
   return (
     <AppScreen>
@@ -169,8 +273,7 @@ export default function ActivityTwoGame() {
         </Text>
 
         <Text style={[styles.subtitle, { color: colors.subtitle }]}>
-          Measure sound levels from classroom actions, compare predictions, and
-          check hearing risk.
+          Record a classroom sound and check its sound level.
         </Text>
       </View>
 
@@ -181,13 +284,14 @@ export default function ActivityTwoGame() {
         ]}
       >
         <Text style={[styles.cardTitle, { color: colors.text }]}>
-          Sound Test Details
+          Sound Test
         </Text>
 
         <TextInput
-          value={actionName}
-          onChangeText={setActionName}
-          placeholder="Action tested, e.g. Dropping a book"
+          value={objectName}
+          onChangeText={setObjectName}
+          editable={!isRecording && savedResultId === null}
+          placeholder="Object/action tested, e.g. book dropped"
           placeholderTextColor={colors.subtitle}
           style={[
             styles.input,
@@ -200,9 +304,10 @@ export default function ActivityTwoGame() {
         />
 
         <TextInput
-          value={prediction}
-          onChangeText={setPrediction}
-          placeholder="Prediction: louder or softer than another action?"
+          value={location}
+          onChangeText={setLocation}
+          editable={!isRecording && savedResultId === null}
+          placeholder="Location, e.g. classroom table"
           placeholderTextColor={colors.subtitle}
           style={[
             styles.input,
@@ -214,91 +319,52 @@ export default function ActivityTwoGame() {
           ]}
         />
 
-        <TextInput
-          value={soundLevel}
-          onChangeText={setSoundLevel}
-          placeholder="Outcome sound level in dB"
-          placeholderTextColor={colors.subtitle}
-          keyboardType="decimal-pad"
+        <View
           style={[
-            styles.input,
-            {
-              color: colors.text,
-              borderColor: colors.border,
-              backgroundColor: colors.background,
-            },
+            styles.meterBox,
+            { borderColor: colors.border, backgroundColor: colors.background },
           ]}
-        />
+        >
+          <Text style={[styles.meterLabel, { color: colors.subtitle }]}>
+            Sound Level
+          </Text>
 
-        <TextInput
-          value={locationNotes}
-          onChangeText={setLocationNotes}
-          placeholder="Location, e.g. classroom front desk"
-          placeholderTextColor={colors.subtitle}
-          style={[
-            styles.input,
-            {
-              color: colors.text,
-              borderColor: colors.border,
-              backgroundColor: colors.background,
-            },
-          ]}
-        />
+          <Text style={[styles.dbText, { color: colors.text }]}>
+            {displayDb === null ? '--' : displayDb.toFixed(1)} dB
+          </Text>
 
-        <TextInput
-          value={wereYouRight}
-          onChangeText={setWereYouRight}
-          placeholder="Were you right? e.g. Yes, louder than expected"
-          placeholderTextColor={colors.subtitle}
-          style={[
-            styles.input,
-            {
-              color: colors.text,
-              borderColor: colors.border,
-              backgroundColor: colors.background,
-            },
-          ]}
-        />
+          <Text style={[styles.body, { color: colors.subtitle }]}>
+            {maxDb > 0 ? getSoundRisk(maxDb) : 'Press start and make the sound.'}
+          </Text>
+        </View>
 
-        <TextInput
-          value={observation}
-          onChangeText={setObservation}
-          placeholder="Any surprises or observation notes?"
-          placeholderTextColor={colors.subtitle}
-          multiline
-          style={[
-            styles.input,
-            styles.multilineInput,
-            {
-              color: colors.text,
-              borderColor: colors.border,
-              backgroundColor: colors.background,
-            },
-          ]}
-        />
-
-        <Text style={[styles.helperText, { color: colors.subtitle }]}>
-          Use a sound meter reading or classroom measurement result, then enter
-          the dB value here. Later this result can include GPS tagging and
-          Firestore/SQLite saving.
-        </Text>
-
-        <View style={styles.buttonRow}>
+        {savedResultId === null ? (
           <Pressable
-            onPress={saveResult}
+            onPress={isRecording ? stopRecording : startRecording}
+            disabled={isSaving}
             style={({ pressed }) => [
               styles.button,
-              { backgroundColor: colors.tint },
+              { backgroundColor: isRecording ? colors.danger : colors.tint },
               pressed && styles.buttonPressed,
             ]}
           >
             <Text style={[styles.buttonText, { color: colors.buttonText }]}>
-              Save Sound Result
+              {isSaving
+                ? 'Saving...'
+                : isRecording
+                  ? 'Stop Recording'
+                  : 'Start Recording'}
             </Text>
           </Pressable>
+        ) : (
+          <Text style={[styles.savedText, { color: colors.success }]}>
+            Result saved to Result History.
+          </Text>
+        )}
 
+        {savedResultId !== null && (
           <Pressable
-            onPress={resetForm}
+            onPress={clearTest}
             style={({ pressed }) => [
               styles.secondaryButton,
               { borderColor: colors.border },
@@ -306,10 +372,10 @@ export default function ActivityTwoGame() {
             ]}
           >
             <Text style={[styles.secondaryButtonText, { color: colors.text }]}>
-              Clear Form
+              Clear Test
             </Text>
           </Pressable>
-        </View>
+        )}
       </View>
 
       <View
@@ -324,8 +390,7 @@ export default function ActivityTwoGame() {
 
         {results.length === 0 ? (
           <Text style={[styles.body, { color: colors.subtitle }]}>
-            No sound measurements yet. Test three actions and compare which one
-            was loudest.
+            No results saved yet.
           </Text>
         ) : (
           results.map((result) => (
@@ -334,55 +399,22 @@ export default function ActivityTwoGame() {
               style={[styles.resultRow, { borderColor: colors.border }]}
             >
               <Text style={[styles.resultTitle, { color: colors.text }]}>
-                {result.actionName}
+                {result.objectName}
               </Text>
 
               <Text style={[styles.body, { color: colors.subtitle }]}>
-                Prediction: {result.prediction}
+                Location: {result.location}
               </Text>
 
               <Text style={[styles.score, { color: colors.success }]}>
-                Outcome: {result.soundLevel.toFixed(1)} dB
+                Maximum Sound: {result.maxDb.toFixed(1)} dB
               </Text>
 
               <Text style={[styles.body, { color: colors.subtitle }]}>
-                Location: {result.locationNotes}
-              </Text>
-
-              <Text style={[styles.body, { color: colors.subtitle }]}>
-                Were you right? {result.wereYouRight}
-              </Text>
-
-              {result.observation ? (
-                <Text style={[styles.body, { color: colors.subtitle }]}>
-                  Observation: {result.observation}
-                </Text>
-              ) : null}
-
-              <Text style={[styles.body, { color: colors.subtitle }]}>
-                Hearing risk: {result.riskCategory}
-              </Text>
-
-              <Text style={[styles.body, { color: colors.subtitle }]}>
-                Ear muff advice: {result.earMuffAdvice}
+                Impact: {result.risk}
               </Text>
             </View>
           ))
-        )}
-
-        {results.length > 0 && (
-          <Pressable
-            onPress={resetResults}
-            style={({ pressed }) => [
-              styles.clearResultsButton,
-              { borderColor: colors.danger },
-              pressed && styles.buttonPressed,
-            ]}
-          >
-            <Text style={[styles.secondaryButtonText, { color: colors.danger }]}>
-              Clear Results
-            </Text>
-          </Pressable>
         )}
       </View>
     </AppScreen>
@@ -424,23 +456,36 @@ const styles = StyleSheet.create({
     fontSize: 15,
     marginBottom: 12,
   },
-  multilineInput: {
-    minHeight: 90,
-    textAlignVertical: 'top',
-  },
-  helperText: {
-    fontSize: 13,
-    lineHeight: 18,
+  meterBox: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 16,
     marginBottom: 14,
   },
-  buttonRow: {
-    gap: 10,
+  meterLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  dbText: {
+    fontSize: 42,
+    fontWeight: '900',
+    marginBottom: 8,
   },
   button: {
     minHeight: 56,
     borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: 10,
+  },
+  secondaryButton: {
+    minHeight: 48,
+    borderRadius: 16,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 10,
   },
   buttonPressed: {
     transform: [{ scale: 0.98 }],
@@ -450,24 +495,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
   },
-  secondaryButton: {
-    minHeight: 48,
-    borderRadius: 16,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  clearResultsButton: {
-    marginTop: 14,
-    minHeight: 48,
-    borderRadius: 16,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   secondaryButtonText: {
     fontSize: 15,
     fontWeight: '800',
+  },
+  savedText: {
+    fontSize: 15,
+    fontWeight: '900',
+    textAlign: 'center',
+    marginTop: 4,
   },
   resultRow: {
     borderTopWidth: 1,
