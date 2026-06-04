@@ -131,8 +131,8 @@ export default function SettingScreen() {
   const {
     motionGranted,
     batteryGranted,
-    enableMotion,
-    disableMotion,
+    enableMotionFromSettings,
+    disableMotionFromSettings,
     enableBattery,
     disableBattery,
   } = usePermissions();
@@ -239,7 +239,7 @@ export default function SettingScreen() {
               text: 'Turn Off',
               style: 'destructive',
               onPress: async () => {
-                await disableMotion();
+                await disableMotionFromSettings();
                 updatePermission('motion', false);
               },
             },
@@ -254,7 +254,7 @@ export default function SettingScreen() {
             {
               text: 'Allow',
               onPress: async () => {
-                const granted = await enableMotion();
+                const granted = await enableMotionFromSettings();
                 updatePermission('motion', granted);
               },
             },
@@ -291,8 +291,8 @@ export default function SettingScreen() {
             {
               text: 'Allow',
               onPress: async () => {
-                const granted = await enableBattery();
-                updatePermission('battery', granted);
+                await enableBattery();
+                updatePermission('battery', true);
               },
             },
           ]
