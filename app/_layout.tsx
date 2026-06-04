@@ -14,6 +14,7 @@ import {
   ThemeProvider as AppThemeProvider,
   useAppTheme,
 } from '@/contexts/AppThemeContext';
+import { AuthProvider } from '@/contexts/AuthContext';
 
 function RootLayoutContent() {
   const { activeTheme, colors } = useAppTheme();
@@ -163,7 +164,9 @@ function RootLayoutContent() {
 export default function RootLayout() {
   return (
     <AppThemeProvider>
-      <RootLayoutContent />
+      <AuthProvider>
+        <RootLayoutContent />
+      </AuthProvider>
     </AppThemeProvider>
   );
 }
