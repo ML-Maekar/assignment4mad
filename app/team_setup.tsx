@@ -1,3 +1,11 @@
+import AppScreen from '@/components/AppScreen';
+import { useAppTheme } from '@/contexts/AppThemeContext';
+import {
+  createTeamSetup,
+  generateTeamDiscriminator,
+  joinTeamByDiscriminator,
+} from '@/services/teamService';
+import { saveLocalTeamProfile } from '@/utils/teamProfileStorage';
 import { router } from 'expo-router';
 import React, { useMemo, useState } from 'react';
 import {
@@ -9,69 +17,69 @@ import {
   View,
 } from 'react-native';
 
-import AppScreen from '@/components/AppScreen';
-import { useAppTheme } from '@/contexts/AppThemeContext';
-import { saveTeamSetup } from '@/services/teamService';
-import { saveLocalTeamProfile } from '@/utils/teamProfileStorage';
-
-const MAX_TEAM_MEMBERS = 10;
-
-function createTeamDiscriminator() {
-  const randomNumber = Math.floor(1000 + Math.random() * 9000);
-  return `STEMM-${randomNumber}`;
-}
+type TeamMode = 'create' | 'join';
 
 export default function TeamSetupScreen() {
   const { colors } = useAppTheme();
 
+  const [mode, setMode] = useState<TeamMode>('create');
+
   const [teamName, setTeamName] = useState('');
-  const [memberCount, setMemberCount] = useState('2');
-  const [memberNames, setMemberNames] = useState(['', '']);
+  const [memberCount, setMemberCount] = useState('');
+  const [memberNames, setMemberNames] = useState<string[]>([]);
   const [gradeLevel, setGradeLevel] = useState('');
-  const [teamDiscriminator] = useState(createTeamDiscriminator());
+  const [joinCode, setJoinCode] = useState('');
+
   const [isSaving, setIsSaving] = useState(false);
 
-  const countValue = useMemo(() => {
-    const parsedCount = Number(memberCount);
+  const teamDiscriminator = useMemo(() => generateTeamDiscriminator(), []);
 
-    if (Number.isNaN(parsedCount)) {
-      return 0;
+  const handleMemberCountChange = (value: string) => {
+    const cleanedValue = value.replace(/[^0-9]/g, '');
+    setMemberCount(cleanedValue);
+
+    const count = Number(cleanedValue);
+
+    if (!cleanedValue || count <= 0) {
+      setMemberNames([]);
+      return;
     }
 
-    return parsedCount;
-  }, [memberCount]);
+    if (count > 10) {
+      Alert.alert('Too Many Members', 'A team can have a maximum of 10 members.');
+      setMemberCount('10');
 
-  const updateMemberCount = (value: string) => {
-    setMemberCount(value);
+      setMemberNames((currentNames) => {
+        const updatedNames = [...currentNames];
 
-    const parsedCount = Number(value);
+        while (updatedNames.length < 10) {
+          updatedNames.push('');
+        }
 
-    if (
-      Number.isNaN(parsedCount) ||
-      parsedCount < 1 ||
-      parsedCount > MAX_TEAM_MEMBERS
-    ) {
+        return updatedNames.slice(0, 10);
+      });
+
       return;
     }
 
     setMemberNames((currentNames) => {
       const updatedNames = [...currentNames];
 
-      if (parsedCount > updatedNames.length) {
-        while (updatedNames.length < parsedCount) {
+      if (count > updatedNames.length) {
+        while (updatedNames.length < count) {
           updatedNames.push('');
         }
       }
 
-      if (parsedCount < updatedNames.length) {
-        updatedNames.length = parsedCount;
+      if (count < updatedNames.length) {
+        return updatedNames.slice(0, count);
       }
 
       return updatedNames;
     });
   };
 
-  const updateMemberName = (index: number, value: string) => {
+  const handleMemberNameChange = (index: number, value: string) => {
     setMemberNames((currentNames) => {
       const updatedNames = [...currentNames];
       updatedNames[index] = value;
@@ -79,75 +87,91 @@ export default function TeamSetupScreen() {
     });
   };
 
-  const saveTeam = async () => {
-    const cleanTeamName = teamName.trim();
-    const cleanGradeLevel = gradeLevel.trim();
-    const cleanMemberNames = memberNames
-      .map((memberName) => memberName.trim())
-      .filter((memberName) => memberName.length > 0);
+  const handleCreateTeam = async () => {
+    const count = Number(memberCount);
 
-    if (!cleanTeamName) {
+    if (!teamName.trim()) {
       Alert.alert('Missing Team Name', 'Please enter your team name.');
       return;
     }
 
-    if (
-      Number.isNaN(countValue) ||
-      countValue < 1 ||
-      countValue > MAX_TEAM_MEMBERS
-    ) {
+    if (!Number.isInteger(count) || count <= 0) {
+      Alert.alert('Invalid Team Size', 'Please enter the number of team members.');
+      return;
+    }
+
+    if (count > 10) {
+      Alert.alert('Too Many Members', 'A team can have a maximum of 10 members.');
+      return;
+    }
+
+    if (memberNames.length !== count || memberNames.some((name) => !name.trim())) {
       Alert.alert(
-        'Invalid Team Size',
-        `Please enter a team size between 1 and ${MAX_TEAM_MEMBERS}.`
+        'Missing Member Names',
+        'Please enter the first name of every team member.'
       );
       return;
     }
 
-    if (cleanMemberNames.length !== countValue) {
-      Alert.alert(
-        'Missing Team Members',
-        'Please enter the first name of each team member.'
-      );
-      return;
-    }
-
-    if (!cleanGradeLevel) {
-      Alert.alert(
-        'Missing Grade or Year Level',
-        'Please enter your grade or year level, for example Primary, Year 5, Year 7, or High School.'
-      );
+    if (!gradeLevel.trim()) {
+      Alert.alert('Missing Grade/Year Level', 'Please enter your grade or year level.');
       return;
     }
 
     try {
       setIsSaving(true);
 
-      await saveTeamSetup({
-        teamName: cleanTeamName,
-        memberCount: cleanMemberNames.length,
-        memberNames: cleanMemberNames,
-        gradeLevel: cleanGradeLevel,
+      const createdTeam = await createTeamSetup({
+        teamName: teamName.trim(),
+        memberCount: count,
+        memberNames: memberNames.map((name) => name.trim()),
+        gradeLevel: gradeLevel.trim(),
         teamDiscriminator,
       });
 
-      await saveLocalTeamProfile({
-        teamName: cleanTeamName,
-        memberNames: cleanMemberNames,
-        gradeLevel: cleanGradeLevel,
-        teamDiscriminator,
-      });
+      await saveLocalTeamProfile(createdTeam);
 
-      Alert.alert('Team Saved', 'Your team setup has been saved.', [
-        {
-          text: 'Continue',
-          onPress: () => router.replace('/(tabs)/home' as never),
-        },
-      ]);
-    } catch (error) {
-      console.log('Failed to save team setup:', error);
       Alert.alert(
-        'Save Failed',
-        'The team setup could not be saved. Please try again.'
+        'Team Saved',
+        `Team saved to Firestore.\nTeam Code: ${createdTeam.teamDiscriminator}`
+      );
+
+      router.replace('/(tabs)/home');
+    } catch (error) {
+      console.log('Failed to create team:', error);
+      Alert.alert(
+        'Team Save Failed',
+        error instanceof Error ? error.message : 'The team could not be saved.'
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleJoinTeam = async () => {
+    if (!joinCode.trim()) {
+      Alert.alert('Missing Team Code', 'Please enter your team code.');
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+
+      const joinedTeam = await joinTeamByDiscriminator(joinCode);
+
+      await saveLocalTeamProfile(joinedTeam);
+
+      Alert.alert(
+        'Team Loaded',
+        `You are now using team: ${joinedTeam.teamName}`
+      );
+
+      router.replace('/(tabs)/home');
+    } catch (error) {
+      console.log('Failed to join team:', error);
+      Alert.alert(
+        'Join Team Failed',
+        error instanceof Error ? error.message : 'The team could not be found.'
       );
     } finally {
       setIsSaving(false);
@@ -157,66 +181,71 @@ export default function TeamSetupScreen() {
   return (
     <AppScreen>
       <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>
-          Team Setup
-        </Text>
+        <Text style={[styles.title, { color: colors.text }]}>Team Setup</Text>
 
         <Text style={[styles.subtitle, { color: colors.subtitle }]}>
-          Enter your team details before starting the STEMM Lab activities.
+          Create a new team or log back in using an existing team code.
         </Text>
       </View>
 
-      <View
-        style={[
-          styles.card,
-          {
-            backgroundColor: colors.card,
-            borderColor: colors.border,
-          },
-        ]}
-      >
-        <Text style={[styles.cardTitle, { color: colors.text }]}>
-          Team Information
-        </Text>
-
-        <TextInput
-          value={teamName}
-          onChangeText={setTeamName}
-          placeholder="Team name"
-          placeholderTextColor={colors.subtitle}
-          style={[
-            styles.input,
+      <View style={styles.modeRow}>
+        <Pressable
+          onPress={() => setMode('create')}
+          style={({ pressed }) => [
+            styles.modeButton,
             {
-              color: colors.text,
-              borderColor: colors.border,
-              backgroundColor: colors.background,
+              borderColor: mode === 'create' ? colors.tint : colors.border,
+              backgroundColor:
+                mode === 'create' ? `${colors.tint}20` : colors.card,
             },
+            pressed && styles.buttonPressed,
           ]}
-        />
+        >
+          <Text
+            style={[
+              styles.modeButtonText,
+              { color: mode === 'create' ? colors.tint : colors.text },
+            ]}
+          >
+            Create Team
+          </Text>
+        </Pressable>
 
-        <TextInput
-          value={memberCount}
-          onChangeText={updateMemberCount}
-          placeholder="Number of team members"
-          placeholderTextColor={colors.subtitle}
-          keyboardType="number-pad"
-          style={[
-            styles.input,
+        <Pressable
+          onPress={() => setMode('join')}
+          style={({ pressed }) => [
+            styles.modeButton,
             {
-              color: colors.text,
-              borderColor: colors.border,
-              backgroundColor: colors.background,
+              borderColor: mode === 'join' ? colors.tint : colors.border,
+              backgroundColor:
+                mode === 'join' ? `${colors.tint}20` : colors.card,
             },
+            pressed && styles.buttonPressed,
           ]}
-        />
+        >
+          <Text
+            style={[
+              styles.modeButtonText,
+              { color: mode === 'join' ? colors.tint : colors.text },
+            ]}
+          >
+            Join Team
+          </Text>
+        </Pressable>
+      </View>
 
-        {memberNames.map((memberName, index) => (
+      {mode === 'create' ? (
+        <View
+          style={[
+            styles.card,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
+          <Text style={[styles.cardTitle, { color: colors.text }]}>
+            Create New Team
+          </Text>
+
           <TextInput
-            key={index}
-            value={memberName}
-            onChangeText={(value) => updateMemberName(index, value)}
-            placeholder={`Team member ${index + 1} first name`}
-            placeholderTextColor={colors.subtitle}
             style={[
               styles.input,
               {
@@ -225,68 +254,148 @@ export default function TeamSetupScreen() {
                 backgroundColor: colors.background,
               },
             ]}
+            placeholder="Team Name"
+            placeholderTextColor={colors.subtitle}
+            value={teamName}
+            onChangeText={setTeamName}
           />
-        ))}
 
-        <TextInput
-          value={gradeLevel}
-          onChangeText={setGradeLevel}
-          placeholder="Grade or year level, e.g. Primary, Year 5, Year 8, High School"
-          placeholderTextColor={colors.subtitle}
-          style={[
-            styles.input,
-            {
-              color: colors.text,
-              borderColor: colors.border,
-              backgroundColor: colors.background,
-            },
-          ]}
-        />
+          <TextInput
+            style={[
+              styles.input,
+              {
+                color: colors.text,
+                borderColor: colors.border,
+                backgroundColor: colors.background,
+              },
+            ]}
+            placeholder="How many team members? Max 10"
+            placeholderTextColor={colors.subtitle}
+            keyboardType="number-pad"
+            value={memberCount}
+            onChangeText={handleMemberCountChange}
+          />
 
+          {memberNames.map((name, index) => (
+            <TextInput
+              key={index}
+              style={[
+                styles.input,
+                {
+                  color: colors.text,
+                  borderColor: colors.border,
+                  backgroundColor: colors.background,
+                },
+              ]}
+              placeholder={`First Name of Team Member ${index + 1}`}
+              placeholderTextColor={colors.subtitle}
+              value={name}
+              onChangeText={(value) => handleMemberNameChange(index, value)}
+            />
+          ))}
+
+          <TextInput
+            style={[
+              styles.input,
+              {
+                color: colors.text,
+                borderColor: colors.border,
+                backgroundColor: colors.background,
+              },
+            ]}
+            placeholder="Grade or Year Level, e.g. Year 8"
+            placeholderTextColor={colors.subtitle}
+            value={gradeLevel}
+            onChangeText={setGradeLevel}
+          />
+
+          <View
+            style={[
+              styles.codeBox,
+              { borderColor: colors.tint, backgroundColor: `${colors.tint}15` },
+            ]}
+          >
+            <Text style={[styles.codeLabel, { color: colors.subtitle }]}>
+              Team Code / Discriminator
+            </Text>
+
+            <Text style={[styles.codeValue, { color: colors.tint }]}>
+              {teamDiscriminator}
+            </Text>
+
+            <Text style={[styles.codeHelp, { color: colors.subtitle }]}>
+              Use this code later to log back into the same team.
+            </Text>
+          </View>
+
+          <Pressable
+            onPress={handleCreateTeam}
+            disabled={isSaving}
+            style={({ pressed }) => [
+              styles.button,
+              { backgroundColor: colors.tint },
+              pressed && styles.buttonPressed,
+            ]}
+          >
+            <Text style={[styles.buttonText, { color: colors.buttonText }]}>
+              {isSaving ? 'Saving Team...' : 'Save Team and Continue'}
+            </Text>
+          </Pressable>
+        </View>
+      ) : (
         <View
           style={[
-            styles.discriminatorBox,
-            {
-              borderColor: colors.border,
-              backgroundColor: colors.background,
-            },
+            styles.card,
+            { backgroundColor: colors.card, borderColor: colors.border },
           ]}
         >
-          <Text style={[styles.discriminatorLabel, { color: colors.subtitle }]}>
-            Team Discriminator
+          <Text style={[styles.cardTitle, { color: colors.text }]}>
+            Join Existing Team
           </Text>
 
-          <Text style={[styles.discriminatorValue, { color: colors.text }]}>
-            {teamDiscriminator}
+          <Text style={[styles.body, { color: colors.subtitle }]}>
+            Enter the team code/discriminator to reload the same team on this
+            device.
           </Text>
+
+          <TextInput
+            style={[
+              styles.input,
+              {
+                color: colors.text,
+                borderColor: colors.border,
+                backgroundColor: colors.background,
+              },
+            ]}
+            placeholder="Team Code, e.g. STEMM-1234"
+            placeholderTextColor={colors.subtitle}
+            autoCapitalize="characters"
+            value={joinCode}
+            onChangeText={(value) => setJoinCode(value.toUpperCase())}
+          />
+
+          <Pressable
+            onPress={handleJoinTeam}
+            disabled={isSaving}
+            style={({ pressed }) => [
+              styles.button,
+              { backgroundColor: colors.tint },
+              pressed && styles.buttonPressed,
+            ]}
+          >
+            <Text style={[styles.buttonText, { color: colors.buttonText }]}>
+              {isSaving ? 'Loading Team...' : 'Join Team and Continue'}
+            </Text>
+          </Pressable>
         </View>
-
-        <Text style={[styles.helperText, { color: colors.subtitle }]}>
-          The grade/year level will be used by activities such as Parachute Drop
-          Challenge to show Primary or High School calculations.
-        </Text>
-
-        <Pressable
-          onPress={saveTeam}
-          disabled={isSaving}
-          style={({ pressed }) => [
-            styles.button,
-            { backgroundColor: colors.tint },
-            pressed && styles.buttonPressed,
-          ]}
-        >
-          <Text style={[styles.buttonText, { color: colors.buttonText }]}>
-            {isSaving ? 'Saving Team...' : 'Save Team and Continue'}
-          </Text>
-        </Pressable>
-      </View>
+      )}
     </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
   header: {
-    marginBottom: 24,
+    marginBottom: 20,
   },
   title: {
     fontSize: 32,
@@ -297,15 +406,36 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 22,
   },
+  modeRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 16,
+  },
+  modeButton: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modeButtonText: {
+    fontSize: 15,
+    fontWeight: '900',
+  },
   card: {
     borderWidth: 1,
-    borderRadius: 22,
+    borderRadius: 20,
     padding: 18,
-    marginBottom: 16,
   },
   cardTitle: {
     fontSize: 20,
     fontWeight: '900',
+    marginBottom: 14,
+  },
+  body: {
+    fontSize: 15,
+    lineHeight: 22,
     marginBottom: 14,
   },
   input: {
@@ -315,29 +445,29 @@ const styles = StyleSheet.create({
     fontSize: 15,
     marginBottom: 12,
   },
-  discriminatorBox: {
+  codeBox: {
     borderWidth: 1,
     borderRadius: 16,
     padding: 14,
-    marginBottom: 12,
+    marginBottom: 16,
   },
-  discriminatorLabel: {
+  codeLabel: {
     fontSize: 13,
     fontWeight: '700',
-    marginBottom: 4,
   },
-  discriminatorValue: {
-    fontSize: 20,
+  codeValue: {
+    marginTop: 4,
+    fontSize: 22,
     fontWeight: '900',
   },
-  helperText: {
+  codeHelp: {
+    marginTop: 6,
     fontSize: 13,
     lineHeight: 18,
-    marginBottom: 14,
   },
   button: {
     minHeight: 56,
-    borderRadius: 18,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
   },

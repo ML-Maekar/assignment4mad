@@ -1,3 +1,12 @@
+import AppScreen from '@/components/AppScreen';
+import { useAppTheme } from '@/contexts/AppThemeContext';
+import { saveActivityResultToFirestore } from '@/services/activityFirestoreService';
+import { saveActivityResult } from '@/utils/activityResultsDb';
+import { getActivityLocation } from '@/utils/locationService';
+import {
+  getLocalTeamProfile,
+  getStudentLevelFromGrade,
+} from '@/utils/teamProfileStorage';
 import { ResizeMode, Video } from 'expo-av';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
@@ -11,14 +20,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-
-import AppScreen from '@/components/AppScreen';
-import { useAppTheme } from '@/contexts/AppThemeContext';
-import { saveActivityResult } from '@/utils/activityResultsDb';
-import {
-  getLocalTeamProfile,
-  getStudentLevelFromGrade,
-} from '@/utils/teamProfileStorage';
 
 const PARACHUTE_DEMO_IMAGE = require('../assets/images/activity 1 image.png');
 
@@ -108,6 +109,7 @@ export default function ActivityOneGame() {
 
   const [savedWriteUps, setSavedWriteUps] = useState<WriteUpRecord[]>([]);
   const [lastResult, setLastResult] = useState<Result | null>(null);
+  const [savedResultId, setSavedResultId] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -124,6 +126,8 @@ export default function ActivityOneGame() {
 
     loadTeamProfile();
   }, []);
+
+  const latestWriteUp = savedWriteUps[0];
 
   const zoomInVideo = () => {
     setVideoZoom((currentZoom) => Math.min(currentZoom + 0.25, 3));
@@ -217,29 +221,68 @@ export default function ActivityOneGame() {
 
     setSavedWriteUps((currentWriteUps) => [newWriteUp, ...currentWriteUps]);
 
+    setDesignName('');
+    setPrediction('');
+    setDesignNotes('');
+    setPredictedTime('');
+    setActualTime('');
+    setWasPredictionCorrect('');
+    setStoppingTime('');
+    setEasiestDesign('');
+
     Alert.alert('Write-Up Saved', `${label} write-up has been saved.`);
   };
 
   const calculateAndSaveResult = async () => {
+    if (savedResultId !== null) {
+      Alert.alert(
+        'Result Already Saved',
+        'This final result has already been saved. Press Clear Test to start a new result.'
+      );
+      return;
+    }
+
+    const finalDesignName = designName.trim() || latestWriteUp?.designName || '';
+    const finalPrediction = prediction.trim() || latestWriteUp?.prediction || '';
+    const finalDesignNotes = designNotes.trim() || latestWriteUp?.designNotes || '';
+    const finalPredictedTime =
+      predictedTime.trim() || latestWriteUp?.predictedTime || '';
+    const finalActualTime = actualTime.trim() || latestWriteUp?.actualTime || '';
+    const finalWasPredictionCorrect =
+      wasPredictionCorrect.trim() || latestWriteUp?.wasPredictionCorrect || '';
+    const finalStoppingTime =
+      stoppingTime.trim() || latestWriteUp?.stoppingTime || '';
+    const finalEasiestDesign =
+      easiestDesign.trim() || latestWriteUp?.easiestDesign || '';
+
     const dropHeightValue = Number(dropHeight);
-    const predictedTimeValue = Number(predictedTime);
-    const actualTimeValue = Number(actualTime);
-    const stoppingTimeValue = Number(stoppingTime);
+    const predictedTimeValue = Number(finalPredictedTime);
+    const actualTimeValue = Number(finalActualTime);
+    const stoppingTimeValue = Number(finalStoppingTime);
     const toyMassValue = Number(toyMass);
     const reboundTimeValue = Number(reboundTime);
 
-    if (!designName.trim()) {
-      Alert.alert('Missing Design Name', 'Please enter the design name.');
+    if (!finalDesignName) {
+      Alert.alert(
+        'Missing Design Name',
+        'Please save a write-up first or enter the design name.'
+      );
       return;
     }
 
-    if (!prediction.trim()) {
-      Alert.alert('Missing Prediction', 'Please enter your prediction.');
+    if (!finalPrediction) {
+      Alert.alert(
+        'Missing Prediction',
+        'Please save a write-up first or enter your prediction.'
+      );
       return;
     }
 
-    if (!designNotes.trim()) {
-      Alert.alert('Missing Design Notes', 'Please enter design or sketch notes.');
+    if (!finalDesignNotes) {
+      Alert.alert(
+        'Missing Design Notes',
+        'Please save a write-up first or enter design notes.'
+      );
       return;
     }
 
@@ -249,20 +292,26 @@ export default function ActivityOneGame() {
     }
 
     if (Number.isNaN(actualTimeValue) || actualTimeValue <= 0) {
-      Alert.alert('Invalid Time', 'Please enter the time to first hit the ground.');
+      Alert.alert(
+        'Invalid Time',
+        'Please enter the time to first hit the ground, or save it in the Write Up tab.'
+      );
       return;
     }
 
     if (
-      predictedTime.trim() &&
+      finalPredictedTime &&
       (Number.isNaN(predictedTimeValue) || predictedTimeValue <= 0)
     ) {
       Alert.alert('Invalid Prediction Time', 'Please enter a valid predicted time.');
       return;
     }
 
-    if (!wasPredictionCorrect.trim()) {
-      Alert.alert('Missing Answer', 'Please enter whether your prediction was correct.');
+    if (!finalWasPredictionCorrect) {
+      Alert.alert(
+        'Missing Answer',
+        'Please enter whether your prediction was correct.'
+      );
       return;
     }
 
@@ -327,60 +376,82 @@ export default function ActivityOneGame() {
       const score =
         gForce !== null
           ? Math.max(0, 100 - gForce * 2)
-          : Math.max(0, actualTimeValue * 10);
+          : Math.max(0, finalSpeed * 10);
 
       const label = getDropLabel(dropType, prototypeNumber);
+      const locationData = await getActivityLocation();
+
+      const resultData = {
+        resultType: 'overall-test-result',
+        tabLayout: 'Activity | Write Up | Discussion',
+        location: locationData,
+        teamGradeLevel,
+        studentLevel,
+        dropType,
+        prototypeNumber: dropType === 'prototype' ? prototypeNumber : null,
+        designName: finalDesignName,
+        prediction: finalPrediction,
+        designNotes: finalDesignNotes,
+        easiestDesign: finalEasiestDesign,
+        savedWriteUps,
+        dropHeightMetres: dropHeightValue,
+        predictedTimeSeconds: finalPredictedTime ? predictedTimeValue : null,
+        actualTimeToFirstHitGroundSeconds: actualTimeValue,
+        wasPredictionCorrect: finalWasPredictionCorrect,
+        stoppingTimeSeconds: studentLevel === 'high' ? stoppingTimeValue : null,
+        finalSpeedMetresPerSecond: finalSpeed,
+        toyMassKg: studentLevel === 'high' ? toyMassValue : null,
+        accelerationMetresPerSecondSquared: acceleration,
+        netForceNewtons: netForce,
+        weightNewtons: weight,
+        dragForceNewtons: dragForce,
+        bounceType: studentLevel === 'high' ? bounceType : null,
+        reboundTimeSeconds:
+          studentLevel === 'high' && bounceType === 'bounce'
+            ? reboundTimeValue
+            : null,
+        gForce,
+        safetyMessage,
+        videoUri,
+        playbackRate,
+        videoZoom,
+        formulaPrimary: 'speed = distance ÷ time',
+        formulaAcceleration: 'acceleration = velocity ÷ time',
+        formulaNetForce: 'net force = mass × acceleration',
+        formulaWeight: 'weight = mass × 9.8',
+        formulaDrag: 'drag force = weight − net force',
+        formulaGForce: 'g-force = change in velocity ÷ contact time ÷ 9.8',
+      };
 
       const resultId = await saveActivityResult({
         activityKey: 'activity-one',
         activityTitle: 'Parachute Drop Challenge',
         label,
         score,
-        data: {
-          teamGradeLevel,
-          studentLevel,
-          dropType,
-          prototypeNumber: dropType === 'prototype' ? prototypeNumber : null,
-          designName: designName.trim(),
-          prediction: prediction.trim(),
-          designNotes: designNotes.trim(),
-          easiestDesign: easiestDesign.trim(),
-          savedWriteUps,
-          dropHeightMetres: dropHeightValue,
-          predictedTimeSeconds: predictedTime.trim() ? predictedTimeValue : null,
-          actualTimeToFirstHitGroundSeconds: actualTimeValue,
-          wasPredictionCorrect: wasPredictionCorrect.trim(),
-          stoppingTimeSeconds:
-            studentLevel === 'high' ? stoppingTimeValue : null,
-          finalSpeedMetresPerSecond: finalSpeed,
-          toyMassKg: studentLevel === 'high' ? toyMassValue : null,
-          accelerationMetresPerSecondSquared: acceleration,
-          netForceNewtons: netForce,
-          weightNewtons: weight,
-          dragForceNewtons: dragForce,
-          bounceType: studentLevel === 'high' ? bounceType : null,
-          reboundTimeSeconds:
-            studentLevel === 'high' && bounceType === 'bounce'
-              ? reboundTimeValue
-              : null,
-          gForce,
-          safetyMessage,
-          videoUri,
-          playbackRate,
-          videoZoom,
-          formulaPrimary: 'speed = distance ÷ time',
-          formulaAcceleration: 'acceleration = velocity ÷ time',
-          formulaNetForce: 'net force = mass × acceleration',
-          formulaWeight: 'weight = mass × 9.8',
-          formulaDrag: 'drag force = weight − net force',
-          formulaGForce: 'g-force = change in velocity ÷ contact time ÷ 9.8',
-        },
+        data: resultData,
       });
+
+      try {
+        await saveActivityResultToFirestore({
+          localResultId: resultId,
+          activityKey: 'activity-one',
+          activityTitle: 'Parachute Drop Challenge',
+          label,
+          score,
+          data: resultData,
+        });
+      } catch (firestoreError) {
+        console.log('Activity 1 saved locally but Firestore failed:', firestoreError);
+        Alert.alert(
+          'Saved Locally',
+          'The result was saved to Result History, but Firestore upload failed. Check Firebase rules or internet connection.'
+        );
+      }
 
       const savedResult: Result = {
         id: resultId,
         label,
-        designName: designName.trim(),
+        designName: finalDesignName,
         finalSpeed,
         acceleration,
         netForce,
@@ -390,11 +461,14 @@ export default function ActivityOneGame() {
         safetyMessage,
       };
 
+      setSavedResultId(resultId);
       setLastResult(savedResult);
 
       Alert.alert(
-        'Result Saved',
-        `Speed: ${finalSpeed.toFixed(2)} m/s\n${safetyMessage}`
+        'Overall Result Saved',
+        `Saved to Result History and Firestore.\nSpeed: ${finalSpeed.toFixed(
+          2
+        )} m/s\n${safetyMessage}`
       );
     } catch (error) {
       console.log('Failed to save Activity 1 result:', error);
@@ -422,7 +496,9 @@ export default function ActivityOneGame() {
     setVideoUri(null);
     setPlaybackRate(1);
     setVideoZoom(1);
+    setSavedWriteUps([]);
     setLastResult(null);
+    setSavedResultId(null);
     setActiveTab('activity');
   };
 
@@ -621,6 +697,11 @@ export default function ActivityOneGame() {
       ]}
     >
       <Text style={[styles.cardTitle, { color: colors.text }]}>Write Up</Text>
+
+      <Text style={[styles.body, { color: colors.subtitle }]}>
+        Save one write-up for each baseline/prototype. After saving, the boxes
+        clear so the same write-up is not saved again.
+      </Text>
 
       <Text style={[styles.label, { color: colors.text }]}>Action Type</Text>
 
@@ -886,38 +967,31 @@ export default function ActivityOneGame() {
         {studentLevel === 'primary' ? (
           <>
             <Text style={[styles.body, { color: colors.subtitle }]}>
-              Primary School students calculate:
+              Primary students calculate time to ground and final speed.
             </Text>
             <Text style={[styles.body, { color: colors.subtitle }]}>
-              • Time to hit the ground
-            </Text>
-            <Text style={[styles.body, { color: colors.subtitle }]}>
-              • Final speed = drop height ÷ time
+              Final speed = drop height ÷ time.
             </Text>
           </>
         ) : (
-          <>
-            <Text style={[styles.body, { color: colors.subtitle }]}>
-              High School students calculate:
-            </Text>
-            <Text style={[styles.body, { color: colors.subtitle }]}>
-              • Final speed / velocity
-            </Text>
-            <Text style={[styles.body, { color: colors.subtitle }]}>
-              • Acceleration
-            </Text>
-            <Text style={[styles.body, { color: colors.subtitle }]}>
-              • Net force
-            </Text>
-            <Text style={[styles.body, { color: colors.subtitle }]}>
-              • Drag force
-            </Text>
-            <Text style={[styles.body, { color: colors.subtitle }]}>
-              • G-force using slow-motion stopping time
-            </Text>
-          </>
+          <Text style={[styles.body, { color: colors.subtitle }]}>
+            High School students calculate velocity, acceleration, force, drag,
+            and g-force using slow-motion impact time.
+          </Text>
         )}
       </View>
+
+      {latestWriteUp && (
+        <View style={[styles.resultBox, { borderColor: colors.border }]}>
+          <Text style={[styles.resultTitle, { color: colors.text }]}>
+            Latest Saved Write-Up Used for Result
+          </Text>
+
+          <Text style={[styles.body, { color: colors.subtitle }]}>
+            {latestWriteUp.label}: {latestWriteUp.designName}
+          </Text>
+        </View>
+      )}
 
       <TextInput
         value={dropHeight}
@@ -953,9 +1027,7 @@ export default function ActivityOneGame() {
             ]}
           />
 
-          <Text style={[styles.label, { color: colors.text }]}>
-            Landing Type
-          </Text>
+          <Text style={[styles.label, { color: colors.text }]}>Landing Type</Text>
 
           <View style={styles.optionRow}>
             {(['no-bounce', 'bounce'] as BounceType[]).map((type) => {
@@ -1009,19 +1081,25 @@ export default function ActivityOneGame() {
         </>
       )}
 
-      <Pressable
-        onPress={calculateAndSaveResult}
-        disabled={isSaving}
-        style={({ pressed }) => [
-          styles.button,
-          { backgroundColor: colors.tint },
-          pressed && styles.buttonPressed,
-        ]}
-      >
-        <Text style={[styles.buttonText, { color: colors.buttonText }]}>
-          {isSaving ? 'Saving...' : 'Calculate and Save'}
+      {savedResultId === null ? (
+        <Pressable
+          onPress={calculateAndSaveResult}
+          disabled={isSaving}
+          style={({ pressed }) => [
+            styles.button,
+            { backgroundColor: colors.tint },
+            pressed && styles.buttonPressed,
+          ]}
+        >
+          <Text style={[styles.buttonText, { color: colors.buttonText }]}>
+            {isSaving ? 'Saving...' : 'Calculate and Save Overall Result'}
+          </Text>
+        </Pressable>
+      ) : (
+        <Text style={[styles.savedText, { color: colors.success }]}>
+          Overall result saved to Result History.
         </Text>
-      </Pressable>
+      )}
 
       {lastResult && (
         <View style={[styles.resultBox, { borderColor: colors.border }]}>
@@ -1036,30 +1114,6 @@ export default function ActivityOneGame() {
           <Text style={[styles.score, { color: colors.success }]}>
             Final speed: {lastResult.finalSpeed.toFixed(2)} m/s
           </Text>
-
-          {lastResult.acceleration !== null && (
-            <Text style={[styles.body, { color: colors.subtitle }]}>
-              Acceleration: {lastResult.acceleration.toFixed(2)} m/s²
-            </Text>
-          )}
-
-          {lastResult.netForce !== null && (
-            <Text style={[styles.body, { color: colors.subtitle }]}>
-              Net force: {lastResult.netForce.toFixed(3)} N
-            </Text>
-          )}
-
-          {lastResult.weight !== null && (
-            <Text style={[styles.body, { color: colors.subtitle }]}>
-              Weight: {lastResult.weight.toFixed(3)} N
-            </Text>
-          )}
-
-          {lastResult.dragForce !== null && (
-            <Text style={[styles.body, { color: colors.subtitle }]}>
-              Drag force: {lastResult.dragForce.toFixed(3)} N
-            </Text>
-          )}
 
           {lastResult.gForce !== null && (
             <Text style={[styles.body, { color: colors.subtitle }]}>
@@ -1113,7 +1167,7 @@ export default function ActivityOneGame() {
         </Text>
 
         <Text style={[styles.subtitle, { color: colors.subtitle }]}>
-          Record the drop, complete the write-up, then calculate the result.
+          Record the drop, save write-ups, then save one overall result.
         </Text>
       </View>
 
@@ -1125,18 +1179,9 @@ export default function ActivityOneGame() {
 }
 
 const styles = StyleSheet.create({
-  header: {
-    marginBottom: 20,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '900',
-  },
-  subtitle: {
-    marginTop: 8,
-    fontSize: 16,
-    lineHeight: 22,
-  },
+  header: { marginBottom: 20 },
+  title: { fontSize: 32, fontWeight: '900' },
+  subtitle: { marginTop: 8, fontSize: 16, lineHeight: 22 },
   phoneLayoutCard: {
     borderWidth: 2,
     borderRadius: 24,
@@ -1144,19 +1189,9 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     minHeight: 620,
   },
-  recordHeader: {
-    alignItems: 'flex-end',
-    marginBottom: 16,
-  },
-  recordText: {
-    fontSize: 24,
-    fontWeight: '500',
-  },
-  demoImage: {
-    width: '100%',
-    height: 260,
-    marginBottom: 18,
-  },
+  recordHeader: { alignItems: 'flex-end', marginBottom: 16 },
+  recordText: { fontSize: 24, fontWeight: '500' },
+  demoImage: { width: '100%', height: 260, marginBottom: 18 },
   bottomTabRow: {
     marginTop: 'auto',
     flexDirection: 'row',
@@ -1170,24 +1205,10 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
     borderBottomWidth: 2,
   },
-  bottomTabText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  cardTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    marginBottom: 12,
-  },
-  label: {
-    fontSize: 15,
-    fontWeight: '800',
-    marginBottom: 8,
-  },
-  body: {
-    fontSize: 15,
-    lineHeight: 22,
-  },
+  bottomTabText: { fontSize: 13, fontWeight: '700' },
+  cardTitle: { fontSize: 20, fontWeight: '900', marginBottom: 12 },
+  label: { fontSize: 15, fontWeight: '800', marginBottom: 8 },
+  body: { fontSize: 15, lineHeight: 22 },
   input: {
     borderWidth: 1,
     borderRadius: 14,
@@ -1195,16 +1216,8 @@ const styles = StyleSheet.create({
     fontSize: 15,
     marginBottom: 12,
   },
-  multilineInput: {
-    minHeight: 90,
-    textAlignVertical: 'top',
-  },
-  optionRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginBottom: 14,
-  },
+  multilineInput: { minHeight: 90, textAlignVertical: 'top' },
+  optionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 14 },
   optionButton: {
     flex: 1,
     minHeight: 46,
@@ -1222,10 +1235,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  optionText: {
-    fontSize: 14,
-    fontWeight: '900',
-  },
+  optionText: { fontSize: 14, fontWeight: '900' },
   mediaButtonRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1248,10 +1258,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  smallButtonText: {
-    fontSize: 13,
-    fontWeight: '900',
-  },
+  smallButtonText: { fontSize: 13, fontWeight: '900' },
   videoFrame: {
     width: '100%',
     height: 230,
@@ -1259,26 +1266,15 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: 12,
   },
-  video: {
-    width: '100%',
-    height: 230,
-  },
-  speedRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 12,
-  },
+  video: { width: '100%', height: 230 },
+  speedRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   speedButton: {
     borderWidth: 1,
     borderRadius: 12,
     paddingVertical: 8,
     paddingHorizontal: 12,
   },
-  speedText: {
-    fontSize: 13,
-    fontWeight: '900',
-  },
+  speedText: { fontSize: 13, fontWeight: '900' },
   formulaBox: {
     borderWidth: 1,
     borderRadius: 16,
@@ -1301,31 +1297,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 10,
   },
-  buttonPressed: {
-    transform: [{ scale: 0.98 }],
-    opacity: 0.85,
-  },
-  buttonText: {
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  secondaryButtonText: {
+  buttonPressed: { transform: [{ scale: 0.98 }], opacity: 0.85 },
+  buttonText: { fontSize: 16, fontWeight: '900' },
+  secondaryButtonText: { fontSize: 15, fontWeight: '900' },
+  savedText: {
     fontSize: 15,
     fontWeight: '900',
+    textAlign: 'center',
+    marginTop: 12,
   },
   resultBox: {
     borderTopWidth: 1,
     paddingTop: 12,
     marginTop: 14,
   },
-  resultTitle: {
-    fontSize: 16,
-    fontWeight: '900',
-    marginBottom: 4,
-  },
-  score: {
-    marginTop: 4,
-    fontSize: 15,
-    fontWeight: '900',
-  },
+  resultTitle: { fontSize: 16, fontWeight: '900', marginBottom: 4 },
+  score: { marginTop: 4, fontSize: 15, fontWeight: '900' },
 });
