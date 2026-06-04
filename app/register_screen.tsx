@@ -1,3 +1,5 @@
+import AppScreen from '@/components/AppScreen';
+import { useAppTheme } from '@/contexts/AppThemeContext';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
@@ -51,6 +53,8 @@ function getRegisterErrorMessage(errorCode: string, fallbackMessage: string) {
 }
 
 export default function RegisterScreen() {
+  const { colors } = useAppTheme();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
@@ -81,107 +85,127 @@ export default function RegisterScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>STEMM Lab</Text>
+    <AppScreen>
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: colors.card, borderColor: colors.border },
+        ]}
+      >
+        <Text style={[styles.title, { color: colors.text }]}>STEMM Lab</Text>
 
-      <Text style={styles.subtitle}>Create an account to continue</Text>
+        <Text style={[styles.subtitle, { color: colors.subtitle }]}>
+          Create an account to continue
+        </Text>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
-        placeholderTextColor="#777"
-        autoCapitalize="none"
-        keyboardType="email-address"
-        value={email}
-        onChangeText={setEmail}
-      />
+        <TextInput
+          style={[
+            styles.input,
+            {
+              color: colors.text,
+              borderColor: colors.border,
+              backgroundColor: colors.background,
+            },
+          ]}
+          placeholder="Email"
+          placeholderTextColor={colors.subtitle}
+          autoCapitalize="none"
+          keyboardType="email-address"
+          value={email}
+          onChangeText={setEmail}
+        />
 
-      <TextInput
-        style={styles.input}
-        placeholder="Password"
-        placeholderTextColor="#777"
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-      />
+        <TextInput
+          style={[
+            styles.input,
+            {
+              color: colors.text,
+              borderColor: colors.border,
+              backgroundColor: colors.background,
+            },
+          ]}
+          placeholder="Password"
+          placeholderTextColor={colors.subtitle}
+          secureTextEntry
+          value={password}
+          onChangeText={setPassword}
+        />
 
-      <Text style={styles.passwordHint}>
-        Password must include 8+ characters, one capital letter, one lowercase
-        letter, one number, and one special character.
-      </Text>
+        <Text style={[styles.passwordHint, { color: colors.subtitle }]}>
+          Password must include 8+ characters, one capital letter, one lowercase
+          letter, one number, and one special character.
+        </Text>
 
-      <Pressable style={styles.button} onPress={handleRegister}>
-        <Text style={styles.buttonText}>Register</Text>
-      </Pressable>
+        <Pressable
+          style={({ pressed }) => [
+            styles.button,
+            { backgroundColor: colors.tint },
+            pressed && styles.buttonPressed,
+          ]}
+          onPress={handleRegister}
+        >
+          <Text style={[styles.buttonText, { color: colors.buttonText }]}>
+            Register
+          </Text>
+        </Pressable>
 
-      <Pressable onPress={() => router.push('/login_screen')}>
-        <Text style={styles.link}>Already have an account? Login</Text>
-      </Pressable>
-
-      <Pressable onPress={() => router.replace('/team_setup')}>
-        <Text style={styles.skipLink}>Skip for now</Text>
-      </Pressable>
-    </View>
+        <Pressable onPress={() => router.push('/login_screen')}>
+          <Text style={[styles.link, { color: colors.tint }]}>
+            Already have an account? Login
+          </Text>
+        </Pressable>
+      </View>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+  card: {
+    borderWidth: 1,
+    borderRadius: 24,
     padding: 24,
-    justifyContent: 'center',
-    backgroundColor: '#ffffff',
+    marginTop: 40,
   },
   title: {
     fontSize: 36,
     fontWeight: '800',
     textAlign: 'center',
-    color: '#000000',
   },
   subtitle: {
     fontSize: 16,
     textAlign: 'center',
     marginTop: 8,
     marginBottom: 28,
-    color: '#666666',
   },
   input: {
     borderWidth: 1,
-    borderColor: '#cccccc',
     borderRadius: 12,
     padding: 14,
     marginBottom: 14,
     fontSize: 16,
-    color: '#000000',
   },
   passwordHint: {
     fontSize: 12,
-    color: '#666666',
     lineHeight: 18,
     marginBottom: 14,
   },
   button: {
-    backgroundColor: '#2563eb',
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
     marginTop: 8,
   },
+  buttonPressed: {
+    transform: [{ scale: 0.98 }],
+    opacity: 0.85,
+  },
   buttonText: {
-    color: '#ffffff',
     fontSize: 16,
     fontWeight: '700',
   },
   link: {
     textAlign: 'center',
-    color: '#2563eb',
     fontWeight: '700',
     marginTop: 18,
-  },
-  skipLink: {
-    textAlign: 'center',
-    color: '#666666',
-    fontWeight: '700',
-    marginTop: 14,
   },
 });
