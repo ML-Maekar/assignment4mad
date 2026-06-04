@@ -3,80 +3,75 @@ import React, { useMemo, useState } from 'react';
 import {
   Alert,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
 
-import { saveTeamSetup } from '../services/teamService';
+import AppScreen from '@/components/AppScreen';
+import { useAppTheme } from '@/contexts/AppThemeContext';
+import { saveTeamSetup } from '@/services/teamService';
+import { saveLocalTeamProfile } from '@/utils/teamProfileStorage';
 
-function generateTeamDiscriminator() {
-  const number = Math.floor(1000 + Math.random() * 9000);
-  return `STEMM-${number}`;
+const MAX_TEAM_MEMBERS = 10;
+
+function createTeamDiscriminator() {
+  const randomNumber = Math.floor(1000 + Math.random() * 9000);
+  return `STEMM-${randomNumber}`;
 }
 
 export default function TeamSetupScreen() {
+  const { colors } = useAppTheme();
+
   const [teamName, setTeamName] = useState('');
-  const [memberCount, setMemberCount] = useState('');
-  const [memberNames, setMemberNames] = useState<string[]>([]);
+  const [memberCount, setMemberCount] = useState('2');
+  const [memberNames, setMemberNames] = useState(['', '']);
   const [gradeLevel, setGradeLevel] = useState('');
+  const [teamDiscriminator] = useState(createTeamDiscriminator());
   const [isSaving, setIsSaving] = useState(false);
 
-  const teamDiscriminator = useMemo(() => generateTeamDiscriminator(), []);
+  const countValue = useMemo(() => {
+    const parsedCount = Number(memberCount);
 
-  const handleMemberCountChange = (value: string) => {
-    const cleanedValue = value.replace(/[^0-9]/g, '');
-
-    setMemberCount(cleanedValue);
-
-    const count = Number(cleanedValue);
-
-    if (!cleanedValue || count <= 0) {
-      setMemberNames([]);
-      return;
+    if (Number.isNaN(parsedCount)) {
+      return 0;
     }
 
-    if (count > 10) {
-      Alert.alert(
-        'Too many members',
-        'Please enter 10 or fewer team members.'
-      );
+    return parsedCount;
+  }, [memberCount]);
 
-      setMemberCount('10');
+  const updateMemberCount = (value: string) => {
+    setMemberCount(value);
 
-      setMemberNames((currentNames) => {
-        const updatedNames = [...currentNames];
+    const parsedCount = Number(value);
 
-        while (updatedNames.length < 10) {
-          updatedNames.push('');
-        }
-
-        return updatedNames.slice(0, 10);
-      });
-
+    if (
+      Number.isNaN(parsedCount) ||
+      parsedCount < 1 ||
+      parsedCount > MAX_TEAM_MEMBERS
+    ) {
       return;
     }
 
     setMemberNames((currentNames) => {
       const updatedNames = [...currentNames];
 
-      if (count > updatedNames.length) {
-        while (updatedNames.length < count) {
+      if (parsedCount > updatedNames.length) {
+        while (updatedNames.length < parsedCount) {
           updatedNames.push('');
         }
       }
 
-      if (count < updatedNames.length) {
-        return updatedNames.slice(0, count);
+      if (parsedCount < updatedNames.length) {
+        updatedNames.length = parsedCount;
       }
 
       return updatedNames;
     });
   };
 
-  const handleMemberNameChange = (index: number, value: string) => {
+  const updateMemberName = (index: number, value: string) => {
     setMemberNames((currentNames) => {
       const updatedNames = [...currentNames];
       updatedNames[index] = value;
@@ -84,67 +79,75 @@ export default function TeamSetupScreen() {
     });
   };
 
-  const handleContinue = async () => {
-    const count = Number(memberCount);
+  const saveTeam = async () => {
+    const cleanTeamName = teamName.trim();
+    const cleanGradeLevel = gradeLevel.trim();
+    const cleanMemberNames = memberNames
+      .map((memberName) => memberName.trim())
+      .filter((memberName) => memberName.length > 0);
 
-    if (!teamName.trim()) {
-      Alert.alert('Missing team name', 'Please enter your team name.');
+    if (!cleanTeamName) {
+      Alert.alert('Missing Team Name', 'Please enter your team name.');
       return;
     }
 
-    if (!Number.isInteger(count) || count <= 0) {
+    if (
+      Number.isNaN(countValue) ||
+      countValue < 1 ||
+      countValue > MAX_TEAM_MEMBERS
+    ) {
       Alert.alert(
-        'Invalid team size',
-        'Please enter a valid number of team members.'
+        'Invalid Team Size',
+        `Please enter a team size between 1 and ${MAX_TEAM_MEMBERS}.`
       );
       return;
     }
 
-    if (count > 10) {
+    if (cleanMemberNames.length !== countValue) {
       Alert.alert(
-        'Too many members',
-        'Please enter 10 or fewer team members.'
-      );
-      return;
-    }
-
-    const hasEmptyMemberName = memberNames.some((name) => !name.trim());
-
-    if (memberNames.length !== count || hasEmptyMemberName) {
-      Alert.alert(
-        'Missing member names',
+        'Missing Team Members',
         'Please enter the first name of each team member.'
       );
       return;
     }
 
-    if (!gradeLevel.trim()) {
+    if (!cleanGradeLevel) {
       Alert.alert(
-        'Missing grade/year level',
-        'Please enter your grade or year level.'
+        'Missing Grade or Year Level',
+        'Please enter your grade or year level, for example Primary, Year 5, Year 7, or High School.'
       );
       return;
     }
 
-    const teamData = {
-      teamName: teamName.trim(),
-      memberCount: count,
-      memberNames: memberNames.map((name) => name.trim()),
-      gradeLevel: gradeLevel.trim(),
-      teamDiscriminator,
-    };
-
     try {
       setIsSaving(true);
 
-      await saveTeamSetup(teamData);
+      await saveTeamSetup({
+        teamName: cleanTeamName,
+        memberCount: cleanMemberNames.length,
+        memberNames: cleanMemberNames,
+        gradeLevel: cleanGradeLevel,
+        teamDiscriminator,
+      });
 
-      Alert.alert('Team saved', 'Your team setup has been saved successfully.');
-      router.replace('/(tabs)/home');
-    } catch (error: any) {
+      await saveLocalTeamProfile({
+        teamName: cleanTeamName,
+        memberNames: cleanMemberNames,
+        gradeLevel: cleanGradeLevel,
+        teamDiscriminator,
+      });
+
+      Alert.alert('Team Saved', 'Your team setup has been saved.', [
+        {
+          text: 'Continue',
+          onPress: () => router.replace('/(tabs)/home' as never),
+        },
+      ]);
+    } catch (error) {
+      console.log('Failed to save team setup:', error);
       Alert.alert(
-        'Save failed',
-        error.message || 'Could not save team setup. Please try again.'
+        'Save Failed',
+        'The team setup could not be saved. Please try again.'
       );
     } finally {
       setIsSaving(false);
@@ -152,147 +155,198 @@ export default function TeamSetupScreen() {
   };
 
   return (
-    <ScrollView
-      style={styles.screen}
-      contentContainerStyle={styles.container}
-      keyboardShouldPersistTaps="handled"
-    >
-      <Text style={styles.title}>Team Setup</Text>
+    <AppScreen>
+      <View style={styles.header}>
+        <Text style={[styles.title, { color: colors.text }]}>
+          Team Setup
+        </Text>
 
-      <Text style={styles.subtitle}>
-        Enter your team details before starting the STEMM activities.
-      </Text>
-
-      <TextInput
-        style={styles.input}
-        placeholder="Team Name"
-        placeholderTextColor="#777"
-        value={teamName}
-        onChangeText={setTeamName}
-      />
-
-      <TextInput
-        style={styles.input}
-        placeholder="How many team members?"
-        placeholderTextColor="#777"
-        keyboardType="number-pad"
-        value={memberCount}
-        onChangeText={handleMemberCountChange}
-      />
-
-      {memberNames.map((name, index) => (
-        <TextInput
-          key={index}
-          style={styles.input}
-          placeholder={`First Name of Team Member ${index + 1}`}
-          placeholderTextColor="#777"
-          value={name}
-          onChangeText={(value) => handleMemberNameChange(index, value)}
-        />
-      ))}
-
-      <TextInput
-        style={styles.input}
-        placeholder="Grade or Year Level, e.g. Year 8"
-        placeholderTextColor="#777"
-        value={gradeLevel}
-        onChangeText={setGradeLevel}
-      />
-
-      <View style={styles.discriminatorBox}>
-        <Text style={styles.discriminatorLabel}>Team Discriminator</Text>
-        <Text style={styles.discriminatorValue}>{teamDiscriminator}</Text>
+        <Text style={[styles.subtitle, { color: colors.subtitle }]}>
+          Enter your team details before starting the STEMM Lab activities.
+        </Text>
       </View>
 
-      <Pressable
+      <View
         style={[
-          styles.button,
-          isSaving && styles.disabledButton,
+          styles.card,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+          },
         ]}
-        onPress={handleContinue}
-        disabled={isSaving}
       >
-        <Text style={styles.buttonText}>
-          {isSaving ? 'Saving Team...' : 'Continue to Activities'}
+        <Text style={[styles.cardTitle, { color: colors.text }]}>
+          Team Information
         </Text>
-      </Pressable>
-    </ScrollView>
+
+        <TextInput
+          value={teamName}
+          onChangeText={setTeamName}
+          placeholder="Team name"
+          placeholderTextColor={colors.subtitle}
+          style={[
+            styles.input,
+            {
+              color: colors.text,
+              borderColor: colors.border,
+              backgroundColor: colors.background,
+            },
+          ]}
+        />
+
+        <TextInput
+          value={memberCount}
+          onChangeText={updateMemberCount}
+          placeholder="Number of team members"
+          placeholderTextColor={colors.subtitle}
+          keyboardType="number-pad"
+          style={[
+            styles.input,
+            {
+              color: colors.text,
+              borderColor: colors.border,
+              backgroundColor: colors.background,
+            },
+          ]}
+        />
+
+        {memberNames.map((memberName, index) => (
+          <TextInput
+            key={index}
+            value={memberName}
+            onChangeText={(value) => updateMemberName(index, value)}
+            placeholder={`Team member ${index + 1} first name`}
+            placeholderTextColor={colors.subtitle}
+            style={[
+              styles.input,
+              {
+                color: colors.text,
+                borderColor: colors.border,
+                backgroundColor: colors.background,
+              },
+            ]}
+          />
+        ))}
+
+        <TextInput
+          value={gradeLevel}
+          onChangeText={setGradeLevel}
+          placeholder="Grade or year level, e.g. Primary, Year 5, Year 8, High School"
+          placeholderTextColor={colors.subtitle}
+          style={[
+            styles.input,
+            {
+              color: colors.text,
+              borderColor: colors.border,
+              backgroundColor: colors.background,
+            },
+          ]}
+        />
+
+        <View
+          style={[
+            styles.discriminatorBox,
+            {
+              borderColor: colors.border,
+              backgroundColor: colors.background,
+            },
+          ]}
+        >
+          <Text style={[styles.discriminatorLabel, { color: colors.subtitle }]}>
+            Team Discriminator
+          </Text>
+
+          <Text style={[styles.discriminatorValue, { color: colors.text }]}>
+            {teamDiscriminator}
+          </Text>
+        </View>
+
+        <Text style={[styles.helperText, { color: colors.subtitle }]}>
+          The grade/year level will be used by activities such as Parachute Drop
+          Challenge to show Primary or High School calculations.
+        </Text>
+
+        <Pressable
+          onPress={saveTeam}
+          disabled={isSaving}
+          style={({ pressed }) => [
+            styles.button,
+            { backgroundColor: colors.tint },
+            pressed && styles.buttonPressed,
+          ]}
+        >
+          <Text style={[styles.buttonText, { color: colors.buttonText }]}>
+            {isSaving ? 'Saving Team...' : 'Save Team and Continue'}
+          </Text>
+        </Pressable>
+      </View>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#ffffff',
+  header: {
+    marginBottom: 24,
   },
-
-  container: {
-    padding: 24,
-    paddingTop: 70,
-    paddingBottom: 40,
-  },
-
   title: {
-    fontSize: 34,
-    fontWeight: '800',
-    textAlign: 'center',
-    color: '#000000',
+    fontSize: 32,
+    fontWeight: '900',
   },
-
   subtitle: {
-    fontSize: 16,
-    textAlign: 'center',
     marginTop: 8,
-    marginBottom: 28,
-    color: '#666666',
+    fontSize: 16,
     lineHeight: 22,
   },
-
+  card: {
+    borderWidth: 1,
+    borderRadius: 22,
+    padding: 18,
+    marginBottom: 16,
+  },
+  cardTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+    marginBottom: 14,
+  },
   input: {
     borderWidth: 1,
-    borderColor: '#cccccc',
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 14,
-    marginBottom: 14,
-    fontSize: 16,
-    color: '#000000',
+    fontSize: 15,
+    marginBottom: 12,
   },
-
   discriminatorBox: {
     borderWidth: 1,
-    borderColor: '#2563eb',
-    backgroundColor: '#eff6ff',
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 14,
-    marginBottom: 18,
+    marginBottom: 12,
   },
-
   discriminatorLabel: {
-    color: '#666666',
-    fontSize: 14,
+    fontSize: 13,
+    fontWeight: '700',
     marginBottom: 4,
   },
-
   discriminatorValue: {
-    color: '#2563eb',
-    fontSize: 18,
-    fontWeight: '800',
+    fontSize: 20,
+    fontWeight: '900',
   },
-
+  helperText: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 14,
+  },
   button: {
-    backgroundColor: '#2563eb',
-    borderRadius: 12,
-    padding: 16,
+    minHeight: 56,
+    borderRadius: 18,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-
-  disabledButton: {
-    opacity: 0.6,
+  buttonPressed: {
+    transform: [{ scale: 0.98 }],
+    opacity: 0.85,
   },
-
   buttonText: {
-    color: '#ffffff',
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '900',
   },
 });
