@@ -14,6 +14,7 @@ import {
 
 import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
+import { usePermissions } from '@/contexts/PermissionsContext';
 import { saveAttempt } from '@/services/attemptService';
 import {
   getLocalTeamProfile,
@@ -73,6 +74,7 @@ function getSafetyMessage(gForce: number | null) {
 
 export default function ActivityOneGame() {
   const { colors } = useAppTheme();
+  const { cameraGranted, askForCamera } = usePermissions();
 
   const [activeTab, setActiveTab] = useState<TabKey>('activity');
   const [studentLevel, setStudentLevel] = useState<StudentLevel>('primary');
@@ -119,6 +121,12 @@ export default function ActivityOneGame() {
   const resetVideoZoom = () => setVideoZoom(1);
 
   const recordVideoEvidence = async () => {
+    // Check app-level camera permission first
+    if (!cameraGranted) {
+      const granted = await askForCamera();
+      if (!granted) return;
+    }
+
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
       Alert.alert('Camera Permission Needed', 'Please allow camera access to record the parachute drop.');
@@ -137,6 +145,12 @@ export default function ActivityOneGame() {
   };
 
   const chooseVideoEvidence = async () => {
+    // Check app-level camera permission first
+    if (!cameraGranted) {
+      const granted = await askForCamera();
+      if (!granted) return;
+    }
+
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
       Alert.alert('Media Permission Needed', 'Please allow gallery access to choose a video.');
@@ -182,7 +196,18 @@ export default function ActivityOneGame() {
       easiestDesign: easiestDesign.trim(),
     };
 
-    setSavedWriteUps((current) => [newWriteUp, ...current]);
+    setSavedWriteUps((currentWriteUps) => [newWriteUp, ...currentWriteUps]);
+
+    // Clear fields after saving so user can enter next write-up fresh
+    setDesignName('');
+    setPrediction('');
+    setDesignNotes('');
+    setPredictedTime('');
+    setActualTime('');
+    setWasPredictionCorrect('');
+    setStoppingTime('');
+    setEasiestDesign('');
+
     Alert.alert('Write-Up Saved', `${label} write-up has been saved.`);
   };
 
@@ -248,7 +273,9 @@ export default function ActivityOneGame() {
       const upwardVelocity = studentLevel === 'high' && bounceType === 'bounce' ? 9.8 * reboundTimeValue : 0;
       const gForce = studentLevel === 'high' ? (finalSpeed + upwardVelocity) / stoppingTimeValue / 9.8 : null;
       const safetyMessage = getSafetyMessage(gForce);
-      const score = gForce !== null ? Math.max(0, 100 - gForce * 2) : Math.max(0, actualTimeValue * 10);
+      const score = gForce !== null
+        ? Math.max(0, 100 - gForce * 2)
+        : Math.max(0, finalSpeed * 10);
       const label = getDropLabel(dropType, prototypeNumber);
 
       const savedResultId = await saveAttempt({
@@ -347,6 +374,7 @@ export default function ActivityOneGame() {
     setVideoUri(null);
     setPlaybackRate(1);
     setVideoZoom(1);
+    setSavedWriteUps([]);
     setLastResult(null);
     setActiveTab('activity');
   };
@@ -363,746 +391,5 @@ export default function ActivityOneGame() {
       <View style={[styles.bottomTabRow, { borderTopColor: colors.border }]}>
         {tabs.map((tab) => {
           const selected = activeTab === tab.key;
-          return (
-            <Pressable
-              key={tab.key}
-              onPress={() => setActiveTab(tab.key)}
-              style={({ pressed }) => [
-                styles.bottomTabButton,
-                { borderBottomColor: selected ? colors.tint : 'transparent' },
-                pressed && styles.buttonPressed,
-              ]}
-            >
-              <Text style={[styles.bottomTabText, { color: selected ? colors.tint : colors.subtitle }]}>
-                {tab.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-    );
-  };
-
-  // ─── Activity Tab ──────────────────────────────────────────────
-  const renderActivityTab = () => (
-    <View style={[styles.phoneLayoutCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-
-      <Text style={[styles.cardTitle, { color: colors.text }]}>Instructions</Text>
-
-      <View style={[styles.instructionBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          1. Design and build a parachute for a small toy using available materials.
-        </Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          2. First run with no parachute (baseline) — drop from table height.
-        </Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          3. Position the phone to capture the full drop — toy, parachute, table and landing area.
-        </Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          4. Record video using the buttons below, then use slow motion to measure timing.
-        </Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          5. Zoom in to find: (a) time of release, (b) first hit on ground, (c) stop moving.
-        </Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          6. Redesign and test up to 3 prototypes. Rotate for each team member.
-        </Text>
-      </View>
-
-      {/* Diagram */}
-      <View style={[styles.diagramBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
-        <Text style={[styles.diagramTitle, { color: colors.text }]}>Setup Diagram</Text>
-        <Text style={[styles.diagramText, { color: colors.subtitle }]}>🧸 Toy with parachute attached</Text>
-        <Text style={[styles.diagramText, { color: colors.subtitle }]}>↕ Dropped from table height</Text>
-        <Text style={[styles.diagramText, { color: colors.subtitle }]}>📱 Phone positioned to capture full drop</Text>
-        <Text style={[styles.diagramText, { color: colors.subtitle }]}>🎯 Landing area below</Text>
-      </View>
-
-      <Image source={PARACHUTE_DEMO_IMAGE} style={styles.demoImage} resizeMode="contain" />
-
-      <Text style={[styles.body, { color: colors.subtitle }]}>
-        Place the phone where it can capture the full drop, including the toy, parachute, table, and landing area.
-      </Text>
-
-      <View style={styles.mediaButtonRow}>
-        <Pressable
-          onPress={recordVideoEvidence}
-          style={({ pressed }) => [
-            styles.smallButton,
-            { backgroundColor: colors.tint },
-            pressed && styles.buttonPressed,
-          ]}
-        >
-          <Text style={[styles.smallButtonText, { color: colors.buttonText }]}>Record Video</Text>
-        </Pressable>
-
-        <Pressable
-          onPress={chooseVideoEvidence}
-          style={({ pressed }) => [
-            styles.smallOutlineButton,
-            { borderColor: colors.tint },
-            pressed && styles.buttonPressed,
-          ]}
-        >
-          <Text style={[styles.smallButtonText, { color: colors.tint }]}>Choose Video</Text>
-        </Pressable>
-      </View>
-
-      {videoUri ? (
-        <>
-          <View style={styles.videoFrame}>
-            <Video
-              source={{ uri: videoUri }}
-              style={[styles.video, { transform: [{ scale: videoZoom }] }]}
-              useNativeControls
-              resizeMode={ResizeMode.CONTAIN}
-              rate={playbackRate}
-              shouldPlay={false}
-            />
-          </View>
-
-          <Text style={[styles.label, { color: colors.text }]}>Slow-Motion Playback</Text>
-
-          <View style={styles.speedRow}>
-            {PLAYBACK_SPEEDS.map((speed) => {
-              const selected = playbackRate === speed;
-              return (
-                <Pressable
-                  key={speed}
-                  onPress={() => setPlaybackRate(speed)}
-                  style={({ pressed }) => [
-                    styles.speedButton,
-                    {
-                      borderColor: selected ? colors.tint : colors.border,
-                      backgroundColor: selected ? `${colors.tint}20` : colors.background,
-                    },
-                    pressed && styles.buttonPressed,
-                  ]}
-                >
-                  <Text style={[styles.speedText, { color: selected ? colors.tint : colors.text }]}>
-                    {speed}x
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          <Text style={[styles.label, { color: colors.text }]}>Video Zoom</Text>
-
-          <View style={styles.speedRow}>
-            <Pressable
-              onPress={zoomOutVideo}
-              style={({ pressed }) => [styles.speedButton, { borderColor: colors.border, backgroundColor: colors.background }, pressed && styles.buttonPressed]}
-            >
-              <Text style={[styles.speedText, { color: colors.text }]}>Zoom -</Text>
-            </Pressable>
-
-            <Pressable
-              onPress={resetVideoZoom}
-              style={({ pressed }) => [styles.speedButton, { borderColor: colors.border, backgroundColor: colors.background }, pressed && styles.buttonPressed]}
-            >
-              <Text style={[styles.speedText, { color: colors.text }]}>{videoZoom.toFixed(2)}x</Text>
-            </Pressable>
-
-            <Pressable
-              onPress={zoomInVideo}
-              style={({ pressed }) => [styles.speedButton, { borderColor: colors.border, backgroundColor: colors.background }, pressed && styles.buttonPressed]}
-            >
-              <Text style={[styles.speedText, { color: colors.text }]}>Zoom +</Text>
-            </Pressable>
-          </View>
-        </>
-      ) : null}
-
-      {renderTabs()}
-    </View>
-  );
-
-  // ─── Write-up Tab ──────────────────────────────────────────────
-  const renderWriteUpTab = () => (
-    <View style={[styles.phoneLayoutCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <Text style={[styles.cardTitle, { color: colors.text }]}>Write Up</Text>
-
-      <Text style={[styles.body, { color: colors.subtitle }]}>
-        Complete on paper or use the fields below. Rotate for each team member.
-      </Text>
-
-      <Text style={[styles.label, { color: colors.text }]}>Action Type</Text>
-
-      <View style={styles.optionRow}>
-        {(['baseline', 'prototype'] as DropType[]).map((type) => {
-          const selected = dropType === type;
-          return (
-            <Pressable
-              key={type}
-              onPress={() => setDropType(type)}
-              style={({ pressed }) => [
-                styles.optionButton,
-                {
-                  borderColor: selected ? colors.tint : colors.border,
-                  backgroundColor: selected ? `${colors.tint}20` : colors.background,
-                },
-                pressed && styles.buttonPressed,
-              ]}
-            >
-              <Text style={[styles.optionText, { color: selected ? colors.tint : colors.text }]}>
-                {type === 'baseline' ? 'No Parachute (Baseline)' : 'Parachute Prototype'}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      {dropType === 'prototype' && (
-        <>
-          <Text style={[styles.label, { color: colors.text }]}>Prototype Number</Text>
-          <View style={styles.optionRow}>
-            {[1, 2, 3].map((number) => {
-              const selected = prototypeNumber === number;
-              return (
-                <Pressable
-                  key={number}
-                  onPress={() => setPrototypeNumber(number)}
-                  style={({ pressed }) => [
-                    styles.smallChoice,
-                    {
-                      borderColor: selected ? colors.tint : colors.border,
-                      backgroundColor: selected ? `${colors.tint}20` : colors.background,
-                    },
-                    pressed && styles.buttonPressed,
-                  ]}
-                >
-                  <Text style={[styles.optionText, { color: selected ? colors.tint : colors.text }]}>
-                    {number}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </>
-      )}
-
-      <TextInput
-        value={designName}
-        onChangeText={setDesignName}
-        placeholder="Design name, e.g. plastic bag with four strings"
-        placeholderTextColor={colors.subtitle}
-        style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-      />
-
-      <TextInput
-        value={prediction}
-        onChangeText={setPrediction}
-        placeholder="Predict which design will slow the fall the most"
-        placeholderTextColor={colors.subtitle}
-        multiline
-        style={[styles.input, styles.multilineInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-      />
-
-      <TextInput
-        value={designNotes}
-        onChangeText={setDesignNotes}
-        placeholder="Sketch or design notes — materials used, shape, string length"
-        placeholderTextColor={colors.subtitle}
-        multiline
-        style={[styles.input, styles.multilineInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-      />
-
-      {/* Results table */}
-      <Text style={[styles.label, { color: colors.text }]}>Results Table</Text>
-
-      <View style={[styles.tableBox, { borderColor: colors.border, backgroundColor: colors.background }]}>
-        <View style={[styles.tableRow, { borderColor: colors.border }]}>
-          <Text style={[styles.tableHeader, { color: colors.text, flex: 2 }]}>Design</Text>
-          <Text style={[styles.tableHeader, { color: colors.text, flex: 1 }]}>Predicted (s)</Text>
-          <Text style={[styles.tableHeader, { color: colors.text, flex: 1 }]}>Actual (s)</Text>
-        </View>
-
-        {savedWriteUps.length === 0 ? (
-          <Text style={[styles.body, { color: colors.subtitle, padding: 10 }]}>
-            Save write-ups below to populate results here.
-          </Text>
-        ) : (
-          savedWriteUps.map((writeUp) => (
-            <View key={writeUp.id} style={[styles.tableRow, { borderColor: colors.border }]}>
-              <Text style={[styles.tableCell, { color: colors.text, flex: 2 }]} numberOfLines={2}>
-                {writeUp.designName}
-              </Text>
-              <Text style={[styles.tableCell, { color: colors.subtitle, flex: 1 }]}>
-                {writeUp.predictedTime || '—'}
-              </Text>
-              <Text style={[styles.tableCell, { color: colors.subtitle, flex: 1 }]}>
-                {writeUp.actualTime || '—'}
-              </Text>
-            </View>
-          ))
-        )}
-      </View>
-
-      <TextInput
-        value={predictedTime}
-        onChangeText={setPredictedTime}
-        placeholder="Predicted time to hit ground (seconds)"
-        placeholderTextColor={colors.subtitle}
-        keyboardType="decimal-pad"
-        style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-      />
-
-      <TextInput
-        value={actualTime}
-        onChangeText={setActualTime}
-        placeholder="Actual time to first hit ground (seconds)"
-        placeholderTextColor={colors.subtitle}
-        keyboardType="decimal-pad"
-        style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-      />
-
-      <TextInput
-        value={wasPredictionCorrect}
-        onChangeText={setWasPredictionCorrect}
-        placeholder="Were you right? Explain why or why not."
-        placeholderTextColor={colors.subtitle}
-        multiline
-        style={[styles.input, styles.multilineInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-      />
-
-      <TextInput
-        value={stoppingTime}
-        onChangeText={setStoppingTime}
-        placeholder="Time from first hit to stop moving (slow motion)"
-        placeholderTextColor={colors.subtitle}
-        keyboardType="decimal-pad"
-        style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-      />
-
-      <TextInput
-        value={surprises}
-        onChangeText={setSurprises}
-        placeholder="Any surprises during the drop?"
-        placeholderTextColor={colors.subtitle}
-        multiline
-        style={[styles.input, styles.multilineInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-      />
-
-      <TextInput
-        value={easiestDesign}
-        onChangeText={setEasiestDesign}
-        placeholder="Which design was easiest to make and why?"
-        placeholderTextColor={colors.subtitle}
-        multiline
-        style={[styles.input, styles.multilineInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-      />
-
-      <Pressable
-        onPress={saveWriteUp}
-        style={({ pressed }) => [
-          styles.button,
-          { backgroundColor: colors.tint },
-          pressed && styles.buttonPressed,
-        ]}
-      >
-        <Text style={[styles.buttonText, { color: colors.buttonText }]}>Save Write-Up</Text>
-      </Pressable>
-
-      {savedWriteUps.length > 0 && (
-        <View style={[styles.resultBox, { borderColor: colors.border }]}>
-          <Text style={[styles.resultTitle, { color: colors.text }]}>Saved Write-Ups</Text>
-          {savedWriteUps.map((writeUp) => (
-            <Text key={writeUp.id} style={[styles.body, { color: colors.subtitle }]}>
-              {writeUp.label}: {writeUp.designName}
-            </Text>
-          ))}
-        </View>
-      )}
-
-      {renderTabs()}
-    </View>
-  );
-
-  // ─── Discussion Tab ────────────────────────────────────────────
-  const renderDiscussionTab = () => (
-    <View style={[styles.phoneLayoutCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <Text style={[styles.cardTitle, { color: colors.text }]}>Discussion</Text>
-
-      <View style={[styles.discussionBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
-        <Text style={[styles.discussionHeading, { color: colors.text }]}>
-          Team Level: {teamGradeLevel || 'Not selected'} — {studentLevel === 'primary' ? 'Primary School' : 'High School'} Calculations
-        </Text>
-        {studentLevel === 'primary' ? (
-          <>
-            <Text style={[styles.body, { color: colors.subtitle }]}>• Time to hit the ground</Text>
-            <Text style={[styles.body, { color: colors.subtitle }]}>• Final speed = drop height ÷ time</Text>
-          </>
-        ) : (
-          <>
-            <Text style={[styles.body, { color: colors.subtitle }]}>• Final speed / velocity</Text>
-            <Text style={[styles.body, { color: colors.subtitle }]}>• Acceleration = velocity ÷ time</Text>
-            <Text style={[styles.body, { color: colors.subtitle }]}>• Net force = mass × acceleration</Text>
-            <Text style={[styles.body, { color: colors.subtitle }]}>• Weight = mass × 9.8</Text>
-            <Text style={[styles.body, { color: colors.subtitle }]}>• Drag force = weight − net force</Text>
-            <Text style={[styles.body, { color: colors.subtitle }]}>• G-force = change in velocity ÷ contact time ÷ 9.8</Text>
-          </>
-        )}
-      </View>
-
-      <View style={[styles.discussionBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
-        <Text style={[styles.discussionHeading, { color: colors.text }]}>What is a Parachute Doing?</Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          A parachute increases air resistance (drag force) which slows the fall. The larger the surface area, the more air it catches and the slower the descent.
-        </Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          The goal is to achieve the slowest and safest landing — the lowest g-force on impact means the least injury risk to the toy.
-        </Text>
-      </View>
-
-      <View style={[styles.discussionBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
-        <Text style={[styles.discussionHeading, { color: colors.text }]}>G-Force and Safety</Text>
-        <View style={[styles.tableBox, { borderColor: colors.border, backgroundColor: colors.background }]}>
-          {[
-            ['1–5 g', 'No injury'],
-            ['5–10 g', 'Possible bruising or strains'],
-            ['10–30 g', 'Serious injuries possible'],
-            ['30–50 g', 'High risk of severe injury'],
-            ['50+ g', 'Life-threatening injuries likely'],
-          ].map(([range, risk]) => (
-            <View key={range} style={[styles.tableRow, { borderColor: colors.border }]}>
-              <Text style={[styles.tableCell, { color: colors.text, flex: 1 }]}>{range}</Text>
-              <Text style={[styles.tableCell, { color: colors.subtitle, flex: 2 }]}>{risk}</Text>
-            </View>
-          ))}
-        </View>
-      </View>
-
-      <View style={[styles.discussionBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
-        <Text style={[styles.discussionHeading, { color: colors.text }]}>Think About This</Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>• Which design slowed the fall the most?</Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>• Which design had the lowest g-force on impact?</Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>• What materials or shapes worked best?</Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>• What would you change with more time?</Text>
-      </View>
-
-      <View style={[styles.discussionBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
-        <Text style={[styles.discussionHeading, { color: colors.text }]}>Curriculum Links</Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>• ACSSU117 – Forces and motion</Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>• ACTDEP036 – Testing and improving design solutions</Text>
-      </View>
-
-      {/* Measurement inputs */}
-      <Text style={[styles.label, { color: colors.text }]}>Enter Measurements to Calculate</Text>
-
-      <TextInput
-        value={dropHeight}
-        onChangeText={setDropHeight}
-        placeholder="Drop height in metres"
-        placeholderTextColor={colors.subtitle}
-        keyboardType="decimal-pad"
-        style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-      />
-
-      {studentLevel === 'high' && (
-        <>
-          <TextInput
-            value={toyMass}
-            onChangeText={setToyMass}
-            placeholder="Toy mass in kg"
-            placeholderTextColor={colors.subtitle}
-            keyboardType="decimal-pad"
-            style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-          />
-
-          <Text style={[styles.label, { color: colors.text }]}>Landing Type</Text>
-
-          <View style={styles.optionRow}>
-            {(['no-bounce', 'bounce'] as BounceType[]).map((type) => {
-              const selected = bounceType === type;
-              return (
-                <Pressable
-                  key={type}
-                  onPress={() => setBounceType(type)}
-                  style={({ pressed }) => [
-                    styles.optionButton,
-                    {
-                      borderColor: selected ? colors.tint : colors.border,
-                      backgroundColor: selected ? `${colors.tint}20` : colors.background,
-                    },
-                    pressed && styles.buttonPressed,
-                  ]}
-                >
-                  <Text style={[styles.optionText, { color: selected ? colors.tint : colors.text }]}>
-                    {type === 'no-bounce' ? 'No Bounce' : 'Bounce'}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          {bounceType === 'bounce' && (
-            <TextInput
-              value={reboundTime}
-              onChangeText={setReboundTime}
-              placeholder="Rebound time to highest point in seconds"
-              placeholderTextColor={colors.subtitle}
-              keyboardType="decimal-pad"
-              style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-            />
-          )}
-        </>
-      )}
-
-      <Pressable
-        onPress={calculateAndSaveResult}
-        disabled={isSaving}
-        style={({ pressed }) => [
-          styles.button,
-          { backgroundColor: isSaving ? colors.subtitle : colors.tint },
-          pressed && styles.buttonPressed,
-        ]}
-      >
-        <Text style={[styles.buttonText, { color: colors.buttonText }]}>
-          {isSaving ? 'Saving...' : 'Calculate and Save'}
-        </Text>
-      </Pressable>
-
-      {lastResult && (
-        <View style={[styles.resultBox, { borderColor: colors.border }]}>
-          <Text style={[styles.resultTitle, { color: colors.text }]}>{lastResult.label}</Text>
-          <Text style={[styles.body, { color: colors.subtitle }]}>Design: {lastResult.designName}</Text>
-          <Text style={[styles.score, { color: colors.success }]}>
-            Final speed: {lastResult.finalSpeed.toFixed(2)} m/s
-          </Text>
-          {lastResult.acceleration !== null && (
-            <Text style={[styles.body, { color: colors.subtitle }]}>
-              Acceleration: {lastResult.acceleration.toFixed(2)} m/s²
-            </Text>
-          )}
-          {lastResult.netForce !== null && (
-            <Text style={[styles.body, { color: colors.subtitle }]}>
-              Net force: {lastResult.netForce.toFixed(3)} N
-            </Text>
-          )}
-          {lastResult.weight !== null && (
-            <Text style={[styles.body, { color: colors.subtitle }]}>
-              Weight: {lastResult.weight.toFixed(3)} N
-            </Text>
-          )}
-          {lastResult.dragForce !== null && (
-            <Text style={[styles.body, { color: colors.subtitle }]}>
-              Drag force: {lastResult.dragForce.toFixed(3)} N
-            </Text>
-          )}
-          {lastResult.gForce !== null && (
-            <Text style={[styles.body, { color: colors.subtitle }]}>
-              G-force: {lastResult.gForce.toFixed(2)} g
-            </Text>
-          )}
-          <Text style={[styles.body, { color: colors.subtitle }]}>
-            Safety: {lastResult.safetyMessage}
-          </Text>
-        </View>
-      )}
-
-      <Pressable
-        onPress={() => router.push('/result-history?activityKey=activity-one' as never)}
-        style={({ pressed }) => [
-          styles.secondaryButton,
-          { borderColor: colors.tint },
-          pressed && styles.buttonPressed,
-        ]}
-      >
-        <Text style={[styles.secondaryButtonText, { color: colors.tint }]}>Open Result History</Text>
-      </Pressable>
-
-      <Pressable
-        onPress={() => router.push('/leaderboard?activityKey=activity-one' as never)}
-        style={({ pressed }) => [
-          styles.secondaryButton,
-          { borderColor: colors.tint },
-          pressed && styles.buttonPressed,
-        ]}
-      >
-        <Text style={[styles.secondaryButtonText, { color: colors.tint }]}>View Leaderboard</Text>
-      </Pressable>
-
-      <Pressable
-        onPress={clearTest}
-        style={({ pressed }) => [
-          styles.secondaryButton,
-          { borderColor: colors.border },
-          pressed && styles.buttonPressed,
-        ]}
-      >
-        <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Clear Test</Text>
-      </Pressable>
-
-      {renderTabs()}
-    </View>
-  );
-
-  return (
-    <AppScreen>
-      <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>Parachute Drop Challenge</Text>
-        <Text style={[styles.subtitle, { color: colors.subtitle }]}>
-          Design and test a parachute. Record the drop, complete the write-up, then calculate the result.
-        </Text>
-      </View>
-
-      {activeTab === 'activity' && renderActivityTab()}
-      {activeTab === 'writeup' && renderWriteUpTab()}
-      {activeTab === 'discussion' && renderDiscussionTab()}
-    </AppScreen>
-  );
-}
-
-const styles = StyleSheet.create({
-  header: { marginBottom: 20 },
-  title: { fontSize: 32, fontWeight: '900' },
-  subtitle: { marginTop: 8, fontSize: 16, lineHeight: 22 },
-  phoneLayoutCard: {
-    borderWidth: 2,
-    borderRadius: 24,
-    padding: 18,
-    marginBottom: 16,
-    minHeight: 620,
-  },
-  cardTitle: { fontSize: 20, fontWeight: '900', marginBottom: 12 },
-  label: { fontSize: 15, fontWeight: '800', marginBottom: 8, marginTop: 4 },
-  body: { fontSize: 15, lineHeight: 22 },
-  instructionBox: {
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 16,
-    gap: 6,
-  },
-  diagramBox: {
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 16,
-    gap: 4,
-  },
-  diagramTitle: { fontSize: 15, fontWeight: '800', marginBottom: 8 },
-  diagramText: { fontSize: 14, lineHeight: 22 },
-  demoImage: { width: '100%', height: 260, marginBottom: 18 },
-  bottomTabRow: {
-    marginTop: 'auto',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    borderTopWidth: 1,
-    paddingTop: 12,
-    gap: 4,
-  },
-  bottomTabButton: { paddingHorizontal: 6, paddingBottom: 4, borderBottomWidth: 2 },
-  bottomTabText: { fontSize: 13, fontWeight: '700' },
-  input: {
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 14,
-    fontSize: 15,
-    marginBottom: 12,
-  },
-  multilineInput: { minHeight: 80, textAlignVertical: 'top' },
-  optionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 14 },
-  optionButton: {
-    flex: 1,
-    minHeight: 46,
-    borderWidth: 1,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-  },
-  smallChoice: {
-    width: 58,
-    minHeight: 46,
-    borderWidth: 1,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  optionText: { fontSize: 14, fontWeight: '900' },
-  mediaButtonRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginTop: 12,
-    marginBottom: 12,
-  },
-  smallButton: {
-    minHeight: 44,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  smallOutlineButton: {
-    minHeight: 44,
-    borderRadius: 14,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  smallButtonText: { fontSize: 13, fontWeight: '900' },
-  videoFrame: {
-    width: '100%',
-    height: 230,
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginBottom: 12,
-  },
-  video: { width: '100%', height: 230 },
-  speedRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
-  speedButton: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
-  speedText: { fontSize: 13, fontWeight: '900' },
-  tableBox: {
-    borderWidth: 1,
-    borderRadius: 14,
-    marginBottom: 14,
-    overflow: 'hidden',
-  },
-  tableRow: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-  },
-  tableHeader: { fontSize: 13, fontWeight: '900' },
-  tableCell: { fontSize: 13, fontWeight: '600' },
-  button: {
-    minHeight: 56,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  secondaryButton: {
-    minHeight: 48,
-    borderRadius: 16,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  buttonPressed: { transform: [{ scale: 0.98 }], opacity: 0.85 },
-  buttonText: { fontSize: 16, fontWeight: '900' },
-  secondaryButtonText: { fontSize: 15, fontWeight: '900' },
-  resultBox: { borderTopWidth: 1, paddingTop: 12, marginTop: 14 },
-  resultTitle: { fontSize: 16, fontWeight: '900', marginBottom: 4 },
-  score: { marginTop: 4, fontSize: 15, fontWeight: '900' },
-  discussionBox: {
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 12,
-    gap: 6,
-  },
-  discussionHeading: { fontSize: 16, fontWeight: '900', marginBottom: 6 },
-});
+          retu
+ 

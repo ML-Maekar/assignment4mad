@@ -14,6 +14,7 @@ import {
 
 import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
+import { usePermissions } from '@/contexts/PermissionsContext';
 import { saveAttempt } from '@/services/attemptService';
 
 const FAN_DEMO_IMAGE = require('../assets/images/activity 3.png');
@@ -70,6 +71,7 @@ function degreesToRadians(degrees: number) {
 
 export default function ActivityThreeGame() {
   const { colors } = useAppTheme();
+  const { cameraGranted, askForCamera } = usePermissions();
 
   const [activeTab, setActiveTab] = useState<TabKey>('activity');
 
@@ -100,6 +102,10 @@ export default function ActivityThreeGame() {
   const resetVideoZoom = () => setVideoZoom(1);
 
   const takePhotoEvidence = async () => {
+    if (!cameraGranted) {
+      const granted = await askForCamera();
+      if (!granted) return;
+    }
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
       Alert.alert('Camera Permission Needed', 'Please allow camera access.');
@@ -114,6 +120,10 @@ export default function ActivityThreeGame() {
   };
 
   const choosePhotoEvidence = async () => {
+    if (!cameraGranted) {
+      const granted = await askForCamera();
+      if (!granted) return;
+    }
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
       Alert.alert('Media Permission Needed', 'Please allow gallery access.');
@@ -128,6 +138,10 @@ export default function ActivityThreeGame() {
   };
 
   const recordVideoEvidence = async () => {
+    if (!cameraGranted) {
+      const granted = await askForCamera();
+      if (!granted) return;
+    }
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
       Alert.alert('Camera Permission Needed', 'Please allow camera access.');
@@ -146,6 +160,10 @@ export default function ActivityThreeGame() {
   };
 
   const chooseVideoEvidence = async () => {
+    if (!cameraGranted) {
+      const granted = await askForCamera();
+      if (!granted) return;
+    }
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
       Alert.alert('Media Permission Needed', 'Please allow gallery access.');
@@ -185,7 +203,17 @@ export default function ActivityThreeGame() {
       surprises: surprises.trim(),
     };
 
-    setSavedWriteUps((current) => [newWriteUp, ...current]);
+    setSavedWriteUps((currentWriteUps) => [newWriteUp, ...currentWriteUps]);
+
+    // Clear fields after saving so user can enter next design fresh
+    setFanDesign('');
+    setPrediction('');
+    setDistanceCm('');
+    setBendAngleDegrees('');
+    setOutcomeDegrees('');
+    setObservationNotes('');
+    setWasPredictionCorrect('');
+
     Alert.alert('Write-Up Saved', `Design ${designNumber} write-up saved.`);
   };
 
@@ -296,7 +324,9 @@ export default function ActivityThreeGame() {
     setVideoUri(null);
     setPlaybackRate(1);
     setVideoZoom(1);
+    setSavedWriteUps([]);
     setLastResult(null);
+    setResults([]);
     setActiveTab('activity');
   };
 
@@ -359,7 +389,6 @@ export default function ActivityThreeGame() {
         </Text>
       </View>
 
-      {/* Setup diagram */}
       <View style={[styles.diagramBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
         <Text style={[styles.diagramTitle, { color: colors.text }]}>Setup Diagram</Text>
         <Text style={[styles.diagramText, { color: colors.subtitle }]}>📱 Phone — positioned to see the paper bend</Text>
@@ -374,20 +403,39 @@ export default function ActivityThreeGame() {
         Stand paper or cardboard upright on the table. Fan air from 15 cm, 30 cm, or 45 cm away and record the movement.
       </Text>
 
+      {/* Camera permission warning */}
+      {!cameraGranted && (
+        <View style={[styles.warningBox, { backgroundColor: `${colors.danger}18`, borderColor: colors.danger }]}>
+          <Text style={[styles.warningText, { color: colors.danger }]}>
+            ⚠️ Camera permission is off. Enable it in Settings to take photos or record video.
+          </Text>
+        </View>
+      )}
+
       {/* Photo capture */}
       <View style={styles.mediaButtonRow}>
         <Pressable
           onPress={takePhotoEvidence}
-          style={({ pressed }) => [styles.smallButton, { backgroundColor: colors.tint }, pressed && styles.buttonPressed]}
+          style={({ pressed }) => [
+            styles.smallButton,
+            { backgroundColor: cameraGranted ? colors.tint : colors.subtitle },
+            pressed && styles.buttonPressed,
+          ]}
         >
           <Text style={[styles.smallButtonText, { color: colors.buttonText }]}>Take Photo</Text>
         </Pressable>
 
         <Pressable
           onPress={choosePhotoEvidence}
-          style={({ pressed }) => [styles.smallOutlineButton, { borderColor: colors.tint }, pressed && styles.buttonPressed]}
+          style={({ pressed }) => [
+            styles.smallOutlineButton,
+            { borderColor: cameraGranted ? colors.tint : colors.border },
+            pressed && styles.buttonPressed,
+          ]}
         >
-          <Text style={[styles.smallButtonText, { color: colors.tint }]}>Choose Photo</Text>
+          <Text style={[styles.smallButtonText, { color: cameraGranted ? colors.tint : colors.subtitle }]}>
+            Choose Photo
+          </Text>
         </Pressable>
       </View>
 
@@ -403,16 +451,26 @@ export default function ActivityThreeGame() {
       <View style={styles.mediaButtonRow}>
         <Pressable
           onPress={recordVideoEvidence}
-          style={({ pressed }) => [styles.smallButton, { backgroundColor: colors.tint }, pressed && styles.buttonPressed]}
+          style={({ pressed }) => [
+            styles.smallButton,
+            { backgroundColor: cameraGranted ? colors.tint : colors.subtitle },
+            pressed && styles.buttonPressed,
+          ]}
         >
           <Text style={[styles.smallButtonText, { color: colors.buttonText }]}>Record Video</Text>
         </Pressable>
 
         <Pressable
           onPress={chooseVideoEvidence}
-          style={({ pressed }) => [styles.smallOutlineButton, { borderColor: colors.tint }, pressed && styles.buttonPressed]}
+          style={({ pressed }) => [
+            styles.smallOutlineButton,
+            { borderColor: cameraGranted ? colors.tint : colors.border },
+            pressed && styles.buttonPressed,
+          ]}
         >
-          <Text style={[styles.smallButtonText, { color: colors.tint }]}>Choose Video</Text>
+          <Text style={[styles.smallButtonText, { color: cameraGranted ? colors.tint : colors.subtitle }]}>
+            Choose Video
+          </Text>
         </Pressable>
       </View>
 
@@ -524,7 +582,6 @@ export default function ActivityThreeGame() {
         style={[styles.input, styles.multilineInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
       />
 
-      {/* Results table */}
       <Text style={[styles.label, { color: colors.text }]}>Results Table</Text>
 
       <View style={[styles.tableBox, { borderColor: colors.border, backgroundColor: colors.background }]}>
@@ -806,6 +863,13 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 20, fontWeight: '900', marginBottom: 12 },
   label: { fontSize: 15, fontWeight: '800', marginBottom: 8, marginTop: 4 },
   body: { fontSize: 15, lineHeight: 22 },
+  warningBox: {
+    borderWidth: 2,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 12,
+  },
+  warningText: { fontSize: 14, fontWeight: '800', lineHeight: 20 },
   instructionBox: {
     borderWidth: 1,
     borderRadius: 16,
@@ -835,7 +899,7 @@ const styles = StyleSheet.create({
   bottomTabButton: { paddingHorizontal: 6, paddingBottom: 4, borderBottomWidth: 2 },
   bottomTabText: { fontSize: 13, fontWeight: '700' },
   input: { borderWidth: 1, borderRadius: 14, padding: 14, fontSize: 15, marginBottom: 12 },
-  multilineInput: { minHeight: 80, textAlignVertical: 'top' },
+  multilineInput: { minHeight: 90, textAlignVertical: 'top' },
   optionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 14 },
   optionGrid: { gap: 10, marginBottom: 14 },
   smallChoice: {
