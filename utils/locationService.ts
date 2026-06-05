@@ -41,7 +41,6 @@ async function setLocationPermissionGranted(granted: boolean): Promise<void> {
 }
 
 // ─── Smart permission request ─────────────────────────────────
-// Same retry pattern as camera and motion:
 // 1st deny → ask again next time
 // 2nd deny → ask again with stronger message
 // 3rd deny → go to phone settings
@@ -52,7 +51,6 @@ export async function requestLocationPermission(): Promise<boolean> {
 
     const denyCount = await getDenyCount();
 
-    // 3rd time → phone settings
     if (denyCount >= 2) {
       Alert.alert(
         'Location Blocked',
@@ -65,7 +63,6 @@ export async function requestLocationPermission(): Promise<boolean> {
       return false;
     }
 
-    // Check existing system permission first
     const existing = await Location.getForegroundPermissionsAsync();
 
     if (existing.status === 'granted') {
@@ -74,7 +71,6 @@ export async function requestLocationPermission(): Promise<boolean> {
       return true;
     }
 
-    // Request from system
     const result = await Location.requestForegroundPermissionsAsync();
 
     if (result.status === 'granted') {
@@ -98,7 +94,7 @@ export async function revokeLocationPermission(): Promise<void> {
   } catch {}
 }
 
-// ─── Get current location ─────────────────────────────────────
+// ─── LocationTag — used by attemptService ─────────────────────
 export type LocationTag = {
   latitude: number;
   longitude: number;
@@ -112,10 +108,7 @@ export type LocationTag = {
 export async function getCurrentLocationTag(): Promise<LocationTag | null> {
   try {
     const granted = await isLocationPermissionGranted();
-
-    if (!granted) {
-      return null;
-    }
+    if (!granted) return null;
 
     const location = await Location.getCurrentPositionAsync({
       accuracy: Location.Accuracy.Balanced,
@@ -131,7 +124,6 @@ export async function getCurrentLocationTag(): Promise<LocationTag | null> {
 
       if (reverseGeocode.length > 0) {
         const place = reverseGeocode[0];
-
         const parts = [
           place.name,
           place.street,
@@ -139,7 +131,6 @@ export async function getCurrentLocationTag(): Promise<LocationTag | null> {
           place.region,
           place.country,
         ].filter(Boolean);
-
         address = parts.join(', ');
       }
     } catch {
@@ -155,5 +146,54 @@ export async function getCurrentLocationTag(): Promise<LocationTag | null> {
   } catch (error) {
     console.log('Failed to get location:', error);
     return null;
+  }
+}
+
+// ─── ActivityLocation — used by teammate's activity screens ───
+// Kept for backward compatibility with activity-two-game etc.
+export type ActivityLocation = {
+  latitude: number | null;
+  longitude: number | null;
+  accuracy: number | null;
+  capturedAt: string;
+  permissionGranted: boolean;
+};
+
+export async function getActivityLocation(): Promise<ActivityLocation> {
+  const capturedAt = new Date().toISOString();
+
+  try {
+    const granted = await isLocationPermissionGranted();
+
+    if (!granted) {
+      return {
+        latitude: null,
+        longitude: null,
+        accuracy: null,
+        capturedAt,
+        permissionGranted: false,
+      };
+    }
+
+    const location = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.Balanced,
+    });
+
+    return {
+      latitude: location.coords.latitude,
+      longitude: location.coords.longitude,
+      accuracy: location.coords.accuracy,
+      capturedAt,
+      permissionGranted: true,
+    };
+  } catch (error) {
+    console.log('Failed to get activity location:', error);
+    return {
+      latitude: null,
+      longitude: null,
+      accuracy: null,
+      capturedAt,
+      permissionGranted: false,
+    };
   }
 }

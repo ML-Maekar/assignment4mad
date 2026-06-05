@@ -1,5 +1,5 @@
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -20,33 +20,77 @@ import {
   deleteActivityResult,
 } from '@/utils/activityResultsDb';
 
-type ActivityFilter = {
-  label: string;
-  key: string | null;
-};
-
-const ACTIVITY_FILTERS: ActivityFilter[] = [
-  { label: 'All Activities', key: null },
-  { label: 'Activity 1', key: 'activity-one' },
-  { label: 'Activity 2', key: 'activity-two' },
-  { label: 'Activity 3', key: 'activity-three' },
-  { label: 'Activity 4', key: 'activity-four' },
-  { label: 'Activity 5', key: 'activity-five' },
-  { label: 'Activity 6', key: 'activity-six' },
-  { label: 'Activity 7', key: 'activity-seven' },
+const ACTIVITY_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'activity-one', label: 'Activity 1' },
+  { key: 'activity-two', label: 'Activity 2' },
+  { key: 'activity-three', label: 'Activity 3' },
+  { key: 'activity-four', label: 'Activity 4' },
+  { key: 'activity-five', label: 'Activity 5' },
+  { key: 'activity-six', label: 'Activity 6' },
+  { key: 'activity-seven', label: 'Activity 7' },
 ];
 
-function formatDateTime(value: string) {
+function formatDate(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
 }
 
-function getFilterLabel(activityKey: string | null) {
-  return (
-    ACTIVITY_FILTERS.find((filter) => filter.key === activityKey)?.label ??
-    'All Activities'
-  );
+function parseData(dataJson: string) {
+  try {
+    return JSON.parse(dataJson) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+function getResultSummary(record: ActivityResultRecord) {
+  const data = parseData(record.dataJson);
+
+  if (record.activityKey === 'activity-one') {
+    const speed = data.finalSpeedMetresPerSecond;
+    const gForce = data.gForce;
+    const safety = data.safetyMessage;
+
+    if (typeof gForce === 'number') {
+      return `Speed: ${Number(speed).toFixed(2)} m/s | G-force: ${gForce.toFixed(
+        2
+      )} g`;
+    }
+
+    if (typeof speed === 'number') {
+      return `Speed: ${speed.toFixed(2)} m/s`;
+    }
+
+    if (typeof safety === 'string') {
+      return safety;
+    }
+  }
+
+  if (record.activityKey === 'activity-two') {
+    const db = data.maximumSoundDb;
+    const risk = data.hearingRisk;
+
+    if (typeof db === 'number') {
+      return `Maximum sound: ${db.toFixed(1)} dB${
+        typeof risk === 'string' ? ` | ${risk}` : ''
+      }`;
+    }
+  }
+
+  if (record.activityKey === 'activity-three') {
+    const force = data.approximateForce;
+    const material = data.targetMaterial;
+
+    if (typeof force === 'number') {
+      return `Approx. force: ${force.toFixed(3)} N${
+        typeof material === 'string' ? ` | ${material}` : ''
+      }`;
+    }
+  }
+
+  return `Score: ${record.score.toFixed(2)}`;
 }
 
 function getTeamName(result: ActivityResultRecord): string | null {
@@ -60,15 +104,12 @@ function getTeamName(result: ActivityResultRecord): string | null {
 
 export default function ResultHistoryScreen() {
   const { colors } = useAppTheme();
-  const params = useLocalSearchParams();
+  const params = useLocalSearchParams<{ activityKey?: string }>();
 
-  const activityKeyParam = Array.isArray(params.activityKey)
-    ? params.activityKey[0]
-    : params.activityKey;
+  const initialFilter =
+    typeof params.activityKey === 'string' ? params.activityKey : 'all';
 
-  const [selectedActivityKey, setSelectedActivityKey] = useState<string | null>(
-    activityKeyParam ?? null
-  );
+  const [selectedFilter, setSelectedFilter] = useState(initialFilter);
   const [results, setResults] = useState<ActivityResultRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [dataSource, setDataSource] = useState<'firestore' | 'sqlite'>('sqlite');
@@ -90,11 +131,11 @@ export default function ResultHistoryScreen() {
       }
     } catch (error) {
       console.log('Failed to load result history:', error);
-      setResults([]);
+      Alert.alert('Load Failed', 'Result history could not be loaded.');
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
-  }, [selectedActivityKey]);
+  }, [selectedFilter]);
 
   useFocusEffect(
     useCallback(() => {
@@ -102,22 +143,10 @@ export default function ResultHistoryScreen() {
     }, [loadResults])
   );
 
-  const selectFilter = (activityKey: string | null) => {
-    setSelectedActivityKey(activityKey);
-  };
-
-  const openResultSummary = (resultId: number) => {
-    router.push(`/result-summary?resultId=${resultId}` as never);
-  };
-
-  const openLeaderboard = (activityKey: string) => {
-    router.push(`/leaderboard?activityKey=${activityKey}` as never);
-  };
-
-  const deleteResult = (result: ActivityResultRecord) => {
+  const confirmDelete = (record: ActivityResultRecord) => {
     Alert.alert(
-      'Delete Result?',
-      `This will delete "${result.label}" from your saved history.`,
+      'Delete Result',
+      `Delete "${record.label}" from Result History?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -137,23 +166,12 @@ export default function ResultHistoryScreen() {
     );
   };
 
-  if (loading) {
-    return (
-      <AppScreen scroll={false} contentStyle={styles.centerContent}>
-        <ActivityIndicator size="large" color={colors.tint} />
-        <Text style={[styles.loadingText, { color: colors.subtitle }]}>
-          Loading result history...
-        </Text>
-      </AppScreen>
-    );
-  }
-
   return (
     <AppScreen>
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.text }]}>Result History</Text>
         <Text style={[styles.subtitle, { color: colors.subtitle }]}>
-          View saved attempts from newest to oldest.
+          View saved overall results from the STEMM Lab activities.
         </Text>
         <Text
           style={[

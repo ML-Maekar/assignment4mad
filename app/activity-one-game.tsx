@@ -308,7 +308,9 @@ export default function ActivityOneGame() {
       const upwardVelocity = studentLevel === 'high' && bounceType === 'bounce' ? 9.8 * reboundTimeValue : 0;
       const gForce = studentLevel === 'high' ? (finalSpeed + upwardVelocity) / stoppingTimeValue / 9.8 : null;
       const safetyMessage = getSafetyMessage(gForce);
-      const score = gForce !== null ? Math.max(0, 100 - gForce * 2) : Math.max(0, actualTimeValue * 10);
+      const score = gForce !== null
+        ? Math.max(0, 100 - gForce * 2)
+        : Math.max(0, finalSpeed * 10);
       const label = getDropLabel(dropType, prototypeNumber);
 
       const savedResultId = await saveAttempt({
@@ -406,6 +408,7 @@ export default function ActivityOneGame() {
     setVideoFirebaseUrl(null);
     setPlaybackRate(1);
     setVideoZoom(1);
+    setSavedWriteUps([]);
     setLastResult(null);
     setActiveTab('activity');
   };

@@ -1,3 +1,5 @@
+import AppScreen from '@/components/AppScreen';
+import { useAppTheme } from '@/contexts/AppThemeContext';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
@@ -241,6 +243,10 @@ const styles = StyleSheet.create({
     marginTop: 4,
     minHeight: 54,
     justifyContent: 'center',
+  },
+  buttonPressed: {
+    transform: [{ scale: 0.98 }],
+    opacity: 0.85,
   },
   buttonPressed: {
     transform: [{ scale: 0.98 }],

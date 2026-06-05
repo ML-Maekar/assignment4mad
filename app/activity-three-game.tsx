@@ -392,7 +392,9 @@ export default function ActivityThreeGame() {
     setVideoFirebaseUrl(null);
     setPlaybackRate(1);
     setVideoZoom(1);
+    setSavedWriteUps([]);
     setLastResult(null);
+    setResults([]);
     setActiveTab('activity');
   };
 
@@ -470,6 +472,15 @@ export default function ActivityThreeGame() {
       <Text style={[styles.body, { color: colors.subtitle }]}>
         Stand paper or cardboard upright on the table. Fan air from 15 cm, 30 cm, or 45 cm away and record the movement.
       </Text>
+
+      {/* Camera permission warning */}
+      {!cameraGranted && (
+        <View style={[styles.warningBox, { backgroundColor: `${colors.danger}18`, borderColor: colors.danger }]}>
+          <Text style={[styles.warningText, { color: colors.danger }]}>
+            ⚠️ Camera permission is off. Enable it in Settings to take photos or record video.
+          </Text>
+        </View>
+      )}
 
       {/* Photo capture */}
       <View style={styles.mediaButtonRow}>
@@ -864,7 +875,7 @@ const styles = StyleSheet.create({
   bottomTabButton: { paddingHorizontal: 6, paddingBottom: 4, borderBottomWidth: 2 },
   bottomTabText: { fontSize: 13, fontWeight: '700' },
   input: { borderWidth: 1, borderRadius: 14, padding: 14, fontSize: 15, marginBottom: 12 },
-  multilineInput: { minHeight: 80, textAlignVertical: 'top' },
+  multilineInput: { minHeight: 90, textAlignVertical: 'top' },
   optionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 14 },
   optionGrid: { gap: 10, marginBottom: 14 },
   smallChoice: { width: 58, minHeight: 46, borderWidth: 1, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
