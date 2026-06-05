@@ -1,17 +1,15 @@
 import { router } from 'expo-router';
 import React from 'react';
 import {
+  Platform,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { BannerAd, BannerAdSize } from 'react-native-google-mobile-ads';
 
 import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
-
-const BANNER_AD_UNIT_ID = 'ca-app-pub-2966645425515948/1766364031';
 
 const screens = [
   {
@@ -50,6 +48,21 @@ const screens = [
     route: '/screen-seven',
   },
 ];
+
+// Lazy load AdMob only in native builds — not in Expo Go
+// AdMob requires native binary which Expo Go does not include
+let BannerAd: any = null;
+let BannerAdSize: any = null;
+
+try {
+  const admob = require('react-native-google-mobile-ads');
+  BannerAd = admob.BannerAd;
+  BannerAdSize = admob.BannerAdSize;
+} catch {
+  // AdMob not available in Expo Go — silently skip
+}
+
+const BANNER_AD_UNIT_ID = 'ca-app-pub-2966645425515948/1766364031';
 
 export default function HomeScreen() {
   const { colors } = useAppTheme();
@@ -139,14 +152,17 @@ export default function HomeScreen() {
         </Pressable>
       </View>
 
-      {/* AdMob Banner Ad */}
-      <View style={styles.adContainer}>
-        <BannerAd
-          unitId={BANNER_AD_UNIT_ID}
-          size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
-          requestOptions={{ requestNonPersonalizedAdsOnly: true }}
-        />
-      </View>
+      {/* AdMob Banner — only renders in native APK build, not Expo Go */}
+      {BannerAd && BannerAdSize && Platform.OS !== 'web' && (
+        <View style={styles.adContainer}>
+          <BannerAd
+            unitId={BANNER_AD_UNIT_ID}
+            size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
+            requestOptions={{ requestNonPersonalizedAdsOnly: true }}
+            onAdFailedToLoad={(error: any) => console.log('Ad failed to load:', error)}
+          />
+        </View>
+      )}
     </AppScreen>
   );
 }

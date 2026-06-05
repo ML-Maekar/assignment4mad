@@ -1,0 +1,10 @@
+appId: com.stemmlab.assignment4mad
+---
+- launchApp
+- assertVisible: "STEMM Lab"
+- tapOn: "Leaderboard"
+- assertVisible: "Rankings"
+- assertVisible: "Filter Results"
+- assertVisible: "All Activities"
+- assertVisible: "Activity 1"
+- assertVisible: "Refresh Leaderboard"

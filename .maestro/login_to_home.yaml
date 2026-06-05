@@ -1,0 +1,15 @@
+appId: com.stemmlab.assignment4mad
+---
+- launchApp:
+    clearState: true
+- assertVisible: "Sign In"
+- tapOn: "Email"
+- inputText: "test@stemm.com"
+- tapOn: "Password"
+- inputText: "Test1234!"
+- tapOn: "Sign In"
+- assertVisible: "STEMM Lab"
+- assertVisible: "Parachute Drop Challenge"
+- assertVisible: "Sound Pollution Hunter"
+- tapOn: "Parachute Drop Challenge"
+- assertVisible: "Parachute Drop Challenge"
