@@ -15,12 +15,8 @@ import { useAppTheme } from '@/contexts/AppThemeContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { saveAttempt } from '@/services/attemptService';
 import { scheduleActivityCompleteNotification } from '@/utils/notifications';
-import {
-  deleteOfflineDraftByKey,
-  getOfflineDraftByKey,
-  parseOfflineDraftData,
-  saveOfflineDraft,
-} from '@/utils/offlineDraftsDb';
+
+const SOUND_DEMO_IMAGE = require('../assets/images/activity 2.png');
 
 type TabKey = 'activity' | 'writeup' | 'discussion';
 
@@ -107,10 +103,12 @@ function getSoundRisk(db: number): SoundRisk {
 
 export default function ActivityTwoGame() {
   const { colors } = useAppTheme();
-  const { micGranted, askForMic } = usePermissions();
+  const { micGranted } = usePermissions();
+
+  const recordingRef = useRef<Audio.Recording | null>(null);
 
   const [activeTab, setActiveTab] = useState<TabKey>('activity');
-  const [hasPermission, setHasPermission] = useState(false);
+  const [hasSystemPermission, setHasSystemPermission] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -125,163 +123,49 @@ export default function ActivityTwoGame() {
   const [maxDb, setMaxDb] = useState(0);
   const [results, setResults] = useState<SoundResult[]>([]);
   const [savedResultId, setSavedResultId] = useState<number | null>(null);
-  const [draftStatus, setDraftStatus] = useState<'idle' | 'saved' | 'error'>('idle');
+  const [lastResult, setLastResult] = useState<Result | null>(null);
+  const [sessionResults, setSessionResults] = useState<Result[]>([]);
 
-  const recordingRef = useRef<Audio.Recording | null>(null);
-  const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hasLoadedDraftRef = useRef(false);
-  const actionNameRef = useRef('');
-  const locationNameRef = useRef('');
-  const predictionRef = useRef('');
-  const wasCorrectRef = useRef('');
-  const surprisesRef = useRef('');
-  const earMuffAnswerRef = useRef('');
-  const maxDbRef = useRef(0);
-  const currentDbRef = useRef(0);
-
-  useEffect(() => { actionNameRef.current = actionName; }, [actionName]);
-  useEffect(() => { locationNameRef.current = locationName; }, [locationName]);
-  useEffect(() => { predictionRef.current = prediction; }, [prediction]);
-  useEffect(() => { wasCorrectRef.current = wasCorrect; }, [wasCorrect]);
-  useEffect(() => { surprisesRef.current = surprises; }, [surprises]);
-  useEffect(() => { earMuffAnswerRef.current = earMuffAnswer; }, [earMuffAnswer]);
-  useEffect(() => { maxDbRef.current = maxDb; }, [maxDb]);
-  useEffect(() => { currentDbRef.current = currentDb; }, [currentDb]);
-
+  // Load system-level mic permission on mount
   useEffect(() => {
-    async function requestPermission() {
+    async function checkSystemPermission() {
       const permission = await Audio.requestPermissionsAsync();
-      setHasPermission(permission.granted);
+      setHasSystemPermission(permission.granted);
     }
-    requestPermission();
+    checkSystemPermission();
   }, []);
-
-  useEffect(() => {
-    async function loadDraft() {
-      try {
-        const draft = await getOfflineDraftByKey(DRAFT_KEY);
-        const draftData = parseOfflineDraftData<ActivityTwoDraftData>(draft);
-
-        if (draftData?.actionName) { setActionName(draftData.actionName); actionNameRef.current = draftData.actionName; }
-        if (draftData?.locationName) { setLocationName(draftData.locationName); locationNameRef.current = draftData.locationName; }
-        if (draftData?.prediction) { setPrediction(draftData.prediction); predictionRef.current = draftData.prediction; }
-        if (draftData?.wasCorrect) { setWasCorrect(draftData.wasCorrect); wasCorrectRef.current = draftData.wasCorrect; }
-        if (draftData?.surprises) { setSurprises(draftData.surprises); surprisesRef.current = draftData.surprises; }
-        if (draftData?.earMuffAnswer) { setEarMuffAnswer(draftData.earMuffAnswer); earMuffAnswerRef.current = draftData.earMuffAnswer; }
-        if (draftData?.actionName || draftData?.prediction) setDraftStatus('saved');
-      } catch (error) {
-        console.log('Failed to load Activity 2 draft:', error);
-        setDraftStatus('error');
-      } finally {
-        hasLoadedDraftRef.current = true;
-      }
-    }
-    loadDraft();
-  }, []);
-
-  useEffect(() => {
-    if (!hasLoadedDraftRef.current) return;
-
-    if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
-
-    draftSaveTimerRef.current = setTimeout(async () => {
-      try {
-        const trimmedActionName = actionName.trim();
-        if (!trimmedActionName) {
-          await deleteOfflineDraftByKey(DRAFT_KEY);
-          setDraftStatus('idle');
-          return;
-        }
-        await saveOfflineDraft({
-          draftKey: DRAFT_KEY,
-          activityKey: ACTIVITY_KEY,
-          activityTitle: ACTIVITY_TITLE,
-          draftTitle: trimmedActionName,
-          data: {
-            actionName: trimmedActionName,
-            locationName: locationName.trim(),
-            prediction: prediction.trim(),
-            wasCorrect: wasCorrect.trim(),
-            surprises: surprises.trim(),
-            earMuffAnswer: earMuffAnswer.trim(),
-          },
-        });
-        setDraftStatus('saved');
-      } catch (error) {
-        console.log('Failed to save Activity 2 draft:', error);
-        setDraftStatus('error');
-      }
-    }, 600);
-
-    return () => {
-      if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
-    };
-  }, [actionName, locationName, prediction, wasCorrect, surprises, earMuffAnswer]);
-
-  const displayedRisk = maxDb > 0 ? getSoundRisk(maxDb) : null;
-
-  const clearDraft = () => {
-    Alert.alert(
-      'Clear Draft?',
-      'This will remove the saved draft for this activity.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteOfflineDraftByKey(DRAFT_KEY);
-              setActionName(''); setLocationName(''); setPrediction('');
-              setWasCorrect(''); setSurprises(''); setEarMuffAnswer('');
-              actionNameRef.current = ''; locationNameRef.current = '';
-              predictionRef.current = ''; wasCorrectRef.current = '';
-              surprisesRef.current = ''; earMuffAnswerRef.current = '';
-              setDraftStatus('idle');
-            } catch (error) {
-              console.log('Failed to clear Activity 2 draft:', error);
-              setDraftStatus('error');
-            }
-          },
-        },
-      ]
-    );
-  };
 
   const startRecording = async () => {
-    if (isRecording || isSaving) return;
-
-    if (savedResultId !== null) {
-      Alert.alert('Result Already Saved', 'Press Clear Test to record a new sound.');
+    // Check app-level permission from Settings first
+    if (!micGranted) {
+      Alert.alert(
+        'Microphone Disabled',
+        'Microphone is turned off in Settings. Go to Settings → Permissions → Microphone to enable it.'
+      );
       return;
     }
 
-    // Check app-level mic permission first
-    if (!micGranted) {
-      const granted = await askForMic();
-      if (!granted) return;
-    }
-
-    if (!hasPermission) {
+    // Check system-level permission
+    if (!hasSystemPermission) {
       const permission = await Audio.requestPermissionsAsync();
-      setHasPermission(permission.granted);
+      setHasSystemPermission(permission.granted);
       if (!permission.granted) {
-        Alert.alert('Microphone Permission Needed', 'Please allow microphone access to measure sound.');
+        Alert.alert('Microphone Permission Needed', 'Please allow microphone access to record sound.');
         return;
       }
     }
 
     if (!actionName.trim()) {
-      Alert.alert('Missing Action', 'Please enter the sound action first.');
+      Alert.alert('Missing Action', 'Please enter the action or object tested.');
       return;
     }
-    if (!locationName.trim()) {
-      Alert.alert('Missing Location', 'Please enter where the sound happened.');
+    if (!location.trim()) {
+      Alert.alert('Missing Location', 'Please enter where the sound was measured.');
       return;
     }
 
     try {
-      setCurrentDb(0);
+      setCurrentDb(null);
       setMaxDb(0);
       currentDbRef.current = 0;
       maxDbRef.current = 0;
@@ -381,6 +265,8 @@ export default function ActivityTwoGame() {
 
       void scheduleActivityCompleteNotification(ACTIVITY_TITLE, finalDb);
 
+      await scheduleActivityCompleteNotification(ACTIVITY_TITLE, finalDb);
+
       Alert.alert(
         'Sound Test Complete',
         `Maximum sound: ${finalDb.toFixed(1)} dB\nRisk: ${soundRisk.label}`,
@@ -435,7 +321,6 @@ export default function ActivityTwoGame() {
     };
   }, []);
 
-  // ─── Tab renderer ─────────────────────────────────────────────
   const renderTabs = () => {
     const tabs: { key: TabKey; label: string }[] = [
       { key: 'activity', label: 'Activity' },
@@ -467,31 +352,27 @@ export default function ActivityTwoGame() {
     );
   };
 
-  // ─── Activity Tab ──────────────────────────────────────────────
   const renderActivityTab = () => (
     <View style={[styles.phoneLayoutCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+
+      {/* Mic permission warning banner */}
+      {!micGranted && (
+        <View style={[styles.warningBanner, { backgroundColor: `${colors.danger}15`, borderColor: colors.danger }]}>
+          <Text style={[styles.warningText, { color: colors.danger }]}>
+            ⚠️ Microphone is disabled. Go to Settings → Permissions → Microphone to enable recording.
+          </Text>
+        </View>
+      )}
 
       <Text style={[styles.cardTitle, { color: colors.text }]}>Instructions</Text>
 
       <View style={[styles.instructionBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          1. Choose a classroom sound action to test.
-        </Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          2. Place the phone about 30 cm from the sound source.
-        </Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          3. Press Start Recording and perform the sound action.
-        </Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          4. Press Stop Recording and save your result.
-        </Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          5. Compare the maximum dB with the hearing risk table in Discussion.
-        </Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          6. Rotate for each team member.
-        </Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>1. Position the phone about 30 cm from the sound source.</Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>2. Enter the action or object name and location below.</Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>3. Press Start Recording, make the sound, then press Stop.</Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>4. Try different actions: drop a pen, book, bottle, stamp feet, clap.</Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>5. Compare sounds — which was louder or softer than expected?</Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>6. Rotate for each team member.</Text>
       </View>
 
       {/* Microphone permission warning */}
@@ -563,12 +444,24 @@ export default function ActivityTwoGame() {
           disabled={isSaving}
           style={({ pressed }) => [
             styles.button,
-            { backgroundColor: isRecording ? colors.danger : micGranted ? colors.tint : colors.subtitle },
+            {
+              backgroundColor: !micGranted
+                ? colors.subtitle
+                : isRecording
+                  ? colors.danger
+                  : colors.tint,
+            },
             pressed && styles.buttonPressed,
           ]}
         >
           <Text style={[styles.buttonText, { color: colors.buttonText }]}>
-            {isSaving ? 'Saving...' : isRecording ? 'Stop Recording and Save' : 'Start Recording'}
+            {isSaving
+              ? 'Saving...'
+              : !micGranted
+                ? 'Mic Disabled'
+                : isRecording
+                  ? 'Stop Recording'
+                  : 'Start Recording'}
           </Text>
         </Pressable>
       ) : (
@@ -597,7 +490,7 @@ export default function ActivityTwoGame() {
         </View>
       )}
 
-      {results.length > 0 && (
+      {sessionResults.length > 0 && (
         <View style={[styles.resultsBox, { borderColor: colors.border }]}>
           <Text style={[styles.cardTitle, { color: colors.text }]}>Session Results</Text>
           {results.map((result) => (
@@ -609,7 +502,14 @@ export default function ActivityTwoGame() {
               </Text>
               <Text style={[styles.body, { color: colors.subtitle }]}>Risk: {result.hearingRisk}</Text>
             </View>
-          ))}
+            {sessionResults.map((r) => (
+              <View key={r.id} style={[styles.tableRow, { borderColor: colors.border }]}>
+                <Text style={[styles.tableCell, { color: colors.text, flex: 2 }]} numberOfLines={2}>{r.actionName}</Text>
+                <Text style={[styles.tableCell, { color: colors.success, flex: 1 }]}>{r.maxDb.toFixed(1)}</Text>
+                <Text style={[styles.tableCell, { color: colors.subtitle, flex: 2 }]} numberOfLines={2}>{r.risk}</Text>
+              </View>
+            ))}
+          </View>
         </View>
       )}
 
@@ -617,7 +517,6 @@ export default function ActivityTwoGame() {
     </View>
   );
 
-  // ─── Write-up Tab ──────────────────────────────────────────────
   const renderWriteUpTab = () => (
     <View style={[styles.phoneLayoutCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <Text style={[styles.cardTitle, { color: colors.text }]}>Write Up</Text>
@@ -637,25 +536,24 @@ export default function ActivityTwoGame() {
         style={[styles.input, styles.multilineInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
       />
 
-      {/* Results table */}
-      {results.length > 0 && (
-        <View style={[styles.tableBox, { borderColor: colors.border, backgroundColor: colors.background }]}>
-          <View style={[styles.tableRow, { borderColor: colors.border }]}>
-            <Text style={[styles.tableHeader, { color: colors.text, flex: 2 }]}>Action</Text>
-            <Text style={[styles.tableHeader, { color: colors.text, flex: 1 }]}>dB</Text>
-            <Text style={[styles.tableHeader, { color: colors.text, flex: 2 }]}>Risk</Text>
-          </View>
-          {results.map((result) => (
-            <View key={result.id} style={[styles.tableRow, { borderColor: colors.border }]}>
-              <Text style={[styles.tableCell, { color: colors.text, flex: 2 }]} numberOfLines={2}>
-                {result.actionName}
-              </Text>
-              <Text style={[styles.tableCell, { color: colors.subtitle, flex: 1 }]}>
-                {result.maximumSoundDb.toFixed(1)}
-              </Text>
-              <Text style={[styles.tableCell, { color: colors.success, flex: 2 }]} numberOfLines={2}>
-                {result.hearingRisk}
-              </Text>
+      <Text style={[styles.label, { color: colors.text }]}>Results Table</Text>
+
+      <View style={[styles.tableBox, { borderColor: colors.border, backgroundColor: colors.background }]}>
+        <View style={[styles.tableRow, { borderColor: colors.border }]}>
+          <Text style={[styles.tableHeader, { color: colors.text, flex: 2 }]}>Action / Object</Text>
+          <Text style={[styles.tableHeader, { color: colors.text, flex: 1 }]}>dB Level</Text>
+          <Text style={[styles.tableHeader, { color: colors.text, flex: 1 }]}>Risk</Text>
+        </View>
+        {sessionResults.length === 0 ? (
+          <Text style={[styles.body, { color: colors.subtitle, padding: 10 }]}>
+            Record sounds in the Activity tab to see results here.
+          </Text>
+        ) : (
+          sessionResults.map((r) => (
+            <View key={r.id} style={[styles.tableRow, { borderColor: colors.border }]}>
+              <Text style={[styles.tableCell, { color: colors.text, flex: 2 }]} numberOfLines={2}>{r.actionName}</Text>
+              <Text style={[styles.tableCell, { color: colors.success, flex: 1 }]}>{r.maxDb.toFixed(1)}</Text>
+              <Text style={[styles.tableCell, { color: colors.subtitle, flex: 1 }]} numberOfLines={2}>{r.range}</Text>
             </View>
           ))}
         </View>
@@ -710,7 +608,6 @@ export default function ActivityTwoGame() {
     </View>
   );
 
-  // ─── Discussion Tab ────────────────────────────────────────────
   const renderDiscussionTab = () => (
     <View style={[styles.phoneLayoutCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <Text style={[styles.cardTitle, { color: colors.text }]}>Discussion</Text>
@@ -727,18 +624,25 @@ export default function ActivityTwoGame() {
         <Text style={[styles.body, { color: colors.subtitle }]}>
           The phone microphone estimates sound level in decibels (dB). The app records the maximum dB measured during the recording and compares it to known hearing risk thresholds.
         </Text>
-      </View>
-
-      <Text style={[styles.label, { color: colors.text }]}>Hearing Risk Table</Text>
-
-      {RISK_TABLE.map((row) => (
-        <View
-          key={row.range}
-          style={[styles.riskRow, { backgroundColor: colors.background, borderColor: colors.border }]}
-        >
-          <Text style={[styles.riskRange, { color: colors.text }]}>{row.range}</Text>
-          <Text style={[styles.body, { color: colors.subtitle }]}>{row.example}</Text>
-          <Text style={[styles.body, { color: colors.subtitle }]}>{row.risk}</Text>
+        <View style={[styles.tableBox, { borderColor: colors.border, backgroundColor: colors.background }]}>
+          {[
+            ['0–30 dB', 'Whisper, quiet library', 'No risk'],
+            ['30–60 dB', 'Normal conversation, classroom noise', 'Safe for long periods'],
+            ['60–85 dB', 'Busy traffic, vacuum cleaner', 'Generally safe, long exposure causes fatigue'],
+            ['85–90 dB', 'Lawn mower, loud classroom', 'Hearing damage possible after long exposure'],
+            ['90–100 dB', 'Motorbike, power tools, loud music', 'Hearing damage likely after short exposure'],
+            ['100–110 dB', 'Nightclub, rock concert, chainsaw', 'Serious hearing damage in minutes'],
+            ['110–120 dB', 'Siren close by, car horn at 1 m', 'Painful; immediate damage possible'],
+            ['120–130 dB', 'Jet engine at close range', 'Immediate and severe hearing damage'],
+            ['140+ dB', 'Explosion, gunshot', 'Instant, permanent hearing damage'],
+          ].map(([range, example, risk]) => (
+            <View key={range} style={[styles.tableRow, { borderColor: colors.border }]}>
+              <Text style={[styles.tableRange, { color: colors.text }]}>{range}</Text>
+              <Text style={[styles.tableText, { color: colors.subtitle }]}>
+                {example} — {risk}
+              </Text>
+            </View>
+          ))}
         </View>
       ))}
 
@@ -801,78 +705,30 @@ const styles = StyleSheet.create({
   header: { marginBottom: 20 },
   title: { fontSize: 32, fontWeight: '900' },
   subtitle: { marginTop: 8, fontSize: 16, lineHeight: 22 },
-  phoneLayoutCard: {
-    borderWidth: 2,
-    borderRadius: 24,
-    padding: 18,
-    marginBottom: 16,
-    minHeight: 620,
-  },
+  phoneLayoutCard: { borderWidth: 2, borderRadius: 24, padding: 18, marginBottom: 16, minHeight: 620 },
   cardTitle: { fontSize: 20, fontWeight: '900', marginBottom: 12 },
   label: { fontSize: 15, fontWeight: '800', marginBottom: 8, marginTop: 4 },
   body: { fontSize: 15, lineHeight: 22 },
-  warningBox: {
-    borderWidth: 2,
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 12,
-  },
-  warningText: { fontSize: 14, fontWeight: '800', lineHeight: 20 },
-  instructionBox: {
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 16,
-    gap: 6,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 14,
-    fontSize: 15,
-    marginBottom: 8,
-  },
+  warningBanner: { borderWidth: 1, borderRadius: 14, padding: 12, marginBottom: 14 },
+  warningText: { fontSize: 14, fontWeight: '700', lineHeight: 20 },
+  instructionBox: { borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 16, gap: 6 },
+  demoImage: { width: '100%', height: 260, marginBottom: 18 },
+  bottomTabRow: { marginTop: 'auto', flexDirection: 'row', justifyContent: 'center', borderTopWidth: 1, paddingTop: 12, gap: 4 },
+  bottomTabButton: { paddingHorizontal: 6, paddingBottom: 4, borderBottomWidth: 2 },
+  bottomTabText: { fontSize: 13, fontWeight: '700' },
+  input: { borderWidth: 1, borderRadius: 14, padding: 14, fontSize: 15, marginBottom: 12 },
   multilineInput: { minHeight: 80, textAlignVertical: 'top' },
-  draftRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 16,
-  },
-  draftStatus: { flex: 1, fontSize: 13, fontWeight: '700' },
-  clearDraftText: { fontSize: 13, fontWeight: '900' },
-  meterBox: {
-    borderWidth: 1,
-    borderRadius: 18,
-    padding: 18,
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  meterLabel: { fontSize: 14, fontWeight: '700' },
-  meterValue: { marginTop: 6, fontSize: 42, fontWeight: '900' },
-  button: {
-    minHeight: 56,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  secondaryButton: {
-    marginTop: 12,
-    minHeight: 52,
-    borderRadius: 18,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  clearButton: {
-    marginTop: 14,
-    minHeight: 48,
-    borderRadius: 16,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  meterBox: { borderWidth: 1, borderRadius: 18, padding: 16, marginBottom: 14 },
+  meterLabel: { fontSize: 13, fontWeight: '700', marginBottom: 6 },
+  dbText: { fontSize: 42, fontWeight: '900', marginBottom: 8 },
+  tableBox: { borderWidth: 1, borderRadius: 14, marginBottom: 14, overflow: 'hidden' },
+  tableRow: { flexDirection: 'row', borderBottomWidth: 1, paddingHorizontal: 10, paddingVertical: 10 },
+  tableHeader: { fontSize: 13, fontWeight: '900' },
+  tableCell: { fontSize: 13, fontWeight: '600' },
+  tableRange: { fontSize: 13, fontWeight: '900' },
+  tableText: { marginTop: 3, fontSize: 13, lineHeight: 18 },
+  button: { minHeight: 56, borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginTop: 8 },
+  secondaryButton: { minHeight: 48, borderRadius: 16, borderWidth: 1, justifyContent: 'center', alignItems: 'center', marginTop: 10 },
   buttonPressed: { transform: [{ scale: 0.98 }], opacity: 0.85 },
   buttonText: { fontSize: 16, fontWeight: '900' },
   secondaryButtonText: { fontSize: 15, fontWeight: '900' },
@@ -882,28 +738,8 @@ const styles = StyleSheet.create({
   resultRow: { borderTopWidth: 1, paddingTop: 12, marginTop: 12 },
   resultTitle: { fontSize: 16, fontWeight: '900', marginBottom: 4 },
   score: { marginTop: 4, fontSize: 15, fontWeight: '900' },
-  tableBox: {
-    borderWidth: 1,
-    borderRadius: 14,
-    marginTop: 14,
-    marginBottom: 14,
-    overflow: 'hidden',
-  },
-  tableRow: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-  },
-  tableHeader: { fontSize: 13, fontWeight: '900' },
-  tableCell: { fontSize: 13, fontWeight: '600' },
-  discussionBox: {
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 12,
-    gap: 6,
-  },
+  resultsBox: { borderTopWidth: 1, paddingTop: 14, marginTop: 14 },
+  discussionBox: { borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 12, gap: 6 },
   discussionHeading: { fontSize: 16, fontWeight: '900', marginBottom: 6 },
   riskRow: {
     borderWidth: 1,

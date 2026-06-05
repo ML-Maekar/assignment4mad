@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Audio } from 'expo-av';
 import * as ImagePicker from 'expo-image-picker';
+import * as MediaLibrary from 'expo-media-library';
 import * as Sensors from 'expo-sensors';
 import { Alert, Linking, Platform } from 'react-native';
 
@@ -269,5 +270,91 @@ export async function revokeMicPermission(): Promise<void> {
   try {
     await setMicPermissionGranted(false);
     await resetMicDenyCount();
+  } catch {}
+}
+
+// ─── Media Library permission ─────────────────────────────────
+// Used by Activities 1 & 3 to save recorded videos to the device
+// gallery and to pick existing videos/photos from the library.
+const MEDIA_LIBRARY_DENY_COUNT_KEY = 'stemm_media_library_deny_count';
+const MEDIA_LIBRARY_GRANTED_KEY = 'stemm_media_library_granted';
+
+async function getMediaLibraryDenyCount(): Promise<number> {
+  try {
+    const value = await AsyncStorage.getItem(MEDIA_LIBRARY_DENY_COUNT_KEY);
+    return value ? parseInt(value, 10) : 0;
+  } catch { return 0; }
+}
+
+async function incrementMediaLibraryDenyCount(): Promise<void> {
+  try {
+    const current = await getMediaLibraryDenyCount();
+    await AsyncStorage.setItem(MEDIA_LIBRARY_DENY_COUNT_KEY, String(current + 1));
+  } catch {}
+}
+
+async function resetMediaLibraryDenyCount(): Promise<void> {
+  try { await AsyncStorage.removeItem(MEDIA_LIBRARY_DENY_COUNT_KEY); } catch {}
+}
+
+export async function isMediaLibraryPermissionGranted(): Promise<boolean> {
+  try {
+    const value = await AsyncStorage.getItem(MEDIA_LIBRARY_GRANTED_KEY);
+    return value === 'true';
+  } catch { return false; }
+}
+
+async function setMediaLibraryPermissionGranted(granted: boolean): Promise<void> {
+  try {
+    await AsyncStorage.setItem(MEDIA_LIBRARY_GRANTED_KEY, granted ? 'true' : 'false');
+  } catch {}
+}
+
+export async function requestMediaLibraryPermission(): Promise<boolean> {
+  try {
+    const alreadyGranted = await isMediaLibraryPermissionGranted();
+    if (alreadyGranted) return true;
+
+    const denyCount = await getMediaLibraryDenyCount();
+
+    if (denyCount >= 2) {
+      Alert.alert(
+        'Media Storage Blocked',
+        'You have declined media library permission multiple times. Please open your phone settings and enable it for STEMM Lab.',
+        [
+          { text: 'Not Now', style: 'cancel' },
+          { text: 'Open Phone Settings', onPress: () => Linking.openSettings() },
+        ]
+      );
+      return false;
+    }
+
+    const result = await MediaLibrary.requestPermissionsAsync();
+
+    if (result.granted) {
+      await setMediaLibraryPermissionGranted(true);
+      await resetMediaLibraryDenyCount();
+      return true;
+    }
+
+    await incrementMediaLibraryDenyCount();
+
+    const newCount = await getMediaLibraryDenyCount();
+    if (newCount >= 2) {
+      Alert.alert(
+        'Media Storage Permission Denied',
+        'Media library access was not granted. One more denial will redirect you to phone settings.',
+        [{ text: 'OK' }]
+      );
+    }
+
+    return false;
+  } catch { return false; }
+}
+
+export async function revokeMediaLibraryPermission(): Promise<void> {
+  try {
+    await setMediaLibraryPermissionGranted(false);
+    await resetMediaLibraryDenyCount();
   } catch {}
 }

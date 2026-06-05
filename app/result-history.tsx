@@ -33,11 +33,7 @@ const ACTIVITY_FILTERS = [
 
 function formatDate(value: string) {
   const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
+  if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
 }
 
@@ -97,6 +93,15 @@ function getResultSummary(record: ActivityResultRecord) {
   return `Score: ${record.score.toFixed(2)}`;
 }
 
+function getTeamName(result: ActivityResultRecord): string | null {
+  try {
+    const data = JSON.parse(result.dataJson ?? '{}') as Record<string, any>;
+    return data.teamName ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export default function ResultHistoryScreen() {
   const { colors } = useAppTheme();
   const params = useLocalSearchParams<{ activityKey?: string }>();
@@ -148,8 +153,13 @@ export default function ResultHistoryScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            await deleteActivityResult(record.id);
-            await loadResults();
+            try {
+              await deleteActivityResult(result.id);
+              await loadResults();
+            } catch (error) {
+              console.log('Failed to delete result:', error);
+              Alert.alert('Delete Failed', 'The result could not be deleted. Please try again.');
+            }
           },
         },
       ]
@@ -160,302 +170,201 @@ export default function ResultHistoryScreen() {
     <AppScreen>
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.text }]}>Result History</Text>
-
         <Text style={[styles.subtitle, { color: colors.subtitle }]}>
           View saved overall results from the STEMM Lab activities.
         </Text>
         <Text
           style={[
             styles.sourceText,
-            {
-              color:
-                dataSource === 'firestore' ? colors.success : colors.subtitle,
-            },
+            { color: dataSource === 'firestore' ? colors.success : colors.subtitle },
           ]}
         >
-          {dataSource === 'firestore'
-            ? '● Synced from cloud'
-            : '● Showing local results'}
+          {dataSource === 'firestore' ? '● Synced from cloud' : '● Showing local results'}
         </Text>
       </View>
 
-      <View style={styles.filterRow}>
-        {ACTIVITY_FILTERS.map((filter) => {
-          const selected = selectedFilter === filter.key;
-
-          return (
-            <Pressable
-              key={filter.key}
-              onPress={() => setSelectedFilter(filter.key)}
-              style={({ pressed }) => [
-                styles.filterButton,
-                {
-                  borderColor: selected ? colors.tint : colors.border,
-                  backgroundColor: selected
-                    ? `${colors.tint}20`
-                    : colors.card,
-                },
-                pressed && styles.buttonPressed,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.filterText,
-                  { color: selected ? colors.tint : colors.text },
+      {/* Filter Card */}
+      <View style={[styles.filterCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.cardTitle, { color: colors.text }]}>Filter Results</Text>
+        <View style={styles.filterGrid}>
+          {ACTIVITY_FILTERS.map((filter) => {
+            const isSelected = selectedActivityKey === filter.key;
+            return (
+              <Pressable
+                key={filter.label}
+                onPress={() => selectFilter(filter.key)}
+                style={({ pressed }) => [
+                  styles.filterButton,
+                  {
+                    borderColor: isSelected ? colors.tint : colors.border,
+                    backgroundColor: isSelected ? `${colors.tint}20` : colors.background,
+                  },
+                  pressed && styles.buttonPressed,
                 ]}
               >
-                {filter.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      <View
-        style={[
-          styles.summaryCard,
-          { backgroundColor: colors.card, borderColor: colors.border },
-        ]}
-      >
-        <Text style={[styles.summaryTitle, { color: colors.text }]}>
-          {selectedFilterLabel}
-        </Text>
-
-        <Text style={[styles.summaryText, { color: colors.subtitle }]}>
-          {isLoading
-            ? 'Loading results...'
-            : `${results.length} saved result${results.length === 1 ? '' : 's'}`}
-        </Text>
-      </View>
-
-      {results.length === 0 && !isLoading ? (
-        <View
-          style={[
-            styles.emptyCard,
-            { backgroundColor: colors.card, borderColor: colors.border },
-          ]}
-        >
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>
-            No Results Yet
-          </Text>
-
-          <Text style={[styles.emptyText, { color: colors.subtitle }]}>
-            Save an overall result from Activity 1, 2, or 3 to see it here.
-          </Text>
+                <Text style={[styles.filterButtonText, { color: isSelected ? colors.tint : colors.text }]}>
+                  {filter.label}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
-      ) : null}
+      </View>
 
-      <View style={styles.resultList}>
-        {results.map((record) => (
-          <View
-            key={record.id}
-            style={[
-              styles.resultCard,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            <View style={styles.resultHeader}>
-              <View style={styles.resultTitleBox}>
-                <Text style={[styles.activityTitle, { color: colors.text }]}>
-                  {record.activityTitle}
-                </Text>
+      {/* Results Card */}
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.cardTitle, { color: colors.text }]}>
+          {getFilterLabel(selectedActivityKey)} Attempts
+        </Text>
 
-                <Text style={[styles.resultLabel, { color: colors.subtitle }]}>
-                  {record.label}
-                </Text>
+        {results.length === 0 ? (
+          <Text style={[styles.emptyText, { color: colors.subtitle }]}>
+            No saved results yet for {getFilterLabel(selectedActivityKey)}.
+            Complete an activity to save your first attempt.
+          </Text>
+        ) : (
+          results.map((result) => {
+            const teamName = getTeamName(result);
+            return (
+              <View
+                key={result.id}
+                style={[styles.resultRow, { borderColor: colors.border }]}
+              >
+                <View style={styles.resultTopRow}>
+                  <View style={styles.resultTextArea}>
+                    <Text style={[styles.resultTitle, { color: colors.text }]}>
+                      {result.label}
+                    </Text>
+
+                    {/* Team name */}
+                    {teamName && (
+                      <Text style={[styles.teamName, { color: colors.tint }]}>
+                        🏷 {teamName}
+                      </Text>
+                    )}
+
+                    <Text style={[styles.resultMeta, { color: colors.subtitle }]}>
+                      {result.activityTitle}
+                    </Text>
+
+                    <Text style={[styles.resultMeta, { color: colors.subtitle }]}>
+                      Saved: {formatDateTime(result.createdAt)}
+                    </Text>
+                  </View>
+
+                  <View
+                    style={[
+                      styles.scoreBadge,
+                      { backgroundColor: colors.background, borderColor: colors.border },
+                    ]}
+                  >
+                    <Text style={[styles.scoreText, { color: colors.success }]}>
+                      {Math.round(result.score)}
+                    </Text>
+                    <Text style={[styles.scoreLabel, { color: colors.subtitle }]}>
+                      score
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.actionRow}>
+                  <Pressable
+                    onPress={() => openResultSummary(result.id)}
+                    style={({ pressed }) => [
+                      styles.smallButton,
+                      { backgroundColor: colors.tint },
+                      pressed && styles.buttonPressed,
+                    ]}
+                  >
+                    <Text style={[styles.smallButtonText, { color: colors.buttonText }]}>Summary</Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() => openLeaderboard(result.activityKey)}
+                    style={({ pressed }) => [
+                      styles.smallOutlineButton,
+                      { borderColor: colors.tint },
+                      pressed && styles.buttonPressed,
+                    ]}
+                  >
+                    <Text style={[styles.smallButtonText, { color: colors.tint }]}>Leaderboard</Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() => deleteResult(result)}
+                    style={({ pressed }) => [
+                      styles.smallOutlineButton,
+                      { borderColor: colors.danger },
+                      pressed && styles.buttonPressed,
+                    ]}
+                  >
+                    <Text style={[styles.smallButtonText, { color: colors.danger }]}>Delete</Text>
+                  </Pressable>
+                </View>
               </View>
+            );
+          })
+        )}
+      </View>
 
-              <Text style={[styles.score, { color: colors.success }]}>
-                {record.score.toFixed(2)}
-              </Text>
-            </View>
+      {/* Bottom Buttons */}
+      <View style={styles.buttonGroup}>
+        <Pressable
+          onPress={() => router.push('/leaderboard' as never)}
+          style={({ pressed }) => [styles.button, { backgroundColor: colors.tint }, pressed && styles.buttonPressed]}
+        >
+          <Text style={[styles.buttonText, { color: colors.buttonText }]}>View Leaderboard</Text>
+        </Pressable>
 
-            <Text style={[styles.resultSummary, { color: colors.subtitle }]}>
-              {getResultSummary(record)}
-            </Text>
+        <Pressable
+          onPress={loadResults}
+          style={({ pressed }) => [styles.secondaryButton, { borderColor: colors.tint }, pressed && styles.buttonPressed]}
+        >
+          <Text style={[styles.secondaryButtonText, { color: colors.tint }]}>Refresh History</Text>
+        </Pressable>
 
-            <Text style={[styles.dateText, { color: colors.subtitle }]}>
-              {formatDate(record.createdAt)}
-            </Text>
-
-            <View style={styles.actionRow}>
-              <Pressable
-                onPress={() =>
-                  router.push(`/result-summary?resultId=${record.id}` as never)
-                }
-                style={({ pressed }) => [
-                  styles.smallButton,
-                  { borderColor: colors.tint },
-                  pressed && styles.buttonPressed,
-                ]}
-              >
-                <Text style={[styles.smallButtonText, { color: colors.tint }]}>
-                  View Summary
-                </Text>
-              </Pressable>
-
-              <Pressable
-                onPress={() =>
-                  router.push(
-                    `/leaderboard?activityKey=${record.activityKey}` as never
-                  )
-                }
-                style={({ pressed }) => [
-                  styles.smallButton,
-                  { borderColor: colors.tint },
-                  pressed && styles.buttonPressed,
-                ]}
-              >
-                <Text style={[styles.smallButtonText, { color: colors.tint }]}>
-                  Leaderboard
-                </Text>
-              </Pressable>
-
-              <Pressable
-                onPress={() => confirmDelete(record)}
-                style={({ pressed }) => [
-                  styles.smallButton,
-                  { borderColor: colors.danger },
-                  pressed && styles.buttonPressed,
-                ]}
-              >
-                <Text style={[styles.smallButtonText, { color: colors.danger }]}>
-                  Delete
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        ))}
+        <Pressable
+          onPress={() => router.replace('/(tabs)/home' as never)}
+          style={({ pressed }) => [styles.secondaryButton, { borderColor: colors.border }, pressed && styles.buttonPressed]}
+        >
+          <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Home</Text>
+        </Pressable>
       </View>
     </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    marginBottom: 20,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '900',
-  },
-  subtitle: {
-    marginTop: 8,
-    fontSize: 16,
-    lineHeight: 22,
-  },
-  filterRow: {
-  sourceText: {
-    marginTop: 6,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  filterCard: {
-    borderWidth: 1,
-    borderRadius: 22,
-    padding: 18,
-    marginBottom: 16,
-  },
-  filterGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 14,
-  },
-  filterButton: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  filterText: {
-    fontSize: 13,
-    fontWeight: '900',
-  },
-  summaryCard: {
-    borderWidth: 1,
-    borderRadius: 18,
-    padding: 16,
-    marginBottom: 14,
-  },
-  summaryTitle: {
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  summaryText: {
-    marginTop: 4,
-    fontSize: 14,
-  },
-  emptyCard: {
-    borderWidth: 1,
-    borderRadius: 18,
-    padding: 18,
-    marginBottom: 14,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  emptyText: {
-    marginTop: 6,
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  resultList: {
-    gap: 14,
-  },
-  resultCard: {
-    borderWidth: 1,
-    borderRadius: 18,
-    padding: 16,
-  },
-  resultHeader: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  resultTitleBox: {
-    flex: 1,
-  },
-  activityTitle: {
-    fontSize: 17,
-    fontWeight: '900',
-  },
-  resultLabel: {
-    marginTop: 4,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  score: {
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  resultSummary: {
-    marginTop: 10,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  dateText: {
-    marginTop: 8,
-    fontSize: 12,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 12,
-  },
-  smallButton: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  smallButtonText: {
-    fontSize: 12,
-    fontWeight: '900',
-  },
-  buttonPressed: {
-    transform: [{ scale: 0.98 }],
-    opacity: 0.85,
-  },
+  centerContent: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { marginTop: 12, fontSize: 15, fontWeight: '700' },
+  header: { marginBottom: 24 },
+  title: { fontSize: 32, fontWeight: '900' },
+  subtitle: { marginTop: 8, fontSize: 16, lineHeight: 22 },
+  sourceText: { marginTop: 6, fontSize: 13, fontWeight: '700' },
+  filterCard: { borderWidth: 1, borderRadius: 22, padding: 18, marginBottom: 16 },
+  filterGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  filterButton: { borderWidth: 1, borderRadius: 16, paddingVertical: 10, paddingHorizontal: 12 },
+  filterButtonText: { fontSize: 13, fontWeight: '900' },
+  card: { borderWidth: 1, borderRadius: 22, padding: 18, marginBottom: 16 },
+  cardTitle: { fontSize: 20, fontWeight: '900', marginBottom: 14 },
+  emptyText: { fontSize: 15, lineHeight: 22 },
+  resultRow: { borderTopWidth: 1, paddingTop: 14, marginTop: 14 },
+  resultTopRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  resultTextArea: { flex: 1 },
+  resultTitle: { fontSize: 17, fontWeight: '900' },
+  teamName: { marginTop: 3, fontSize: 13, fontWeight: '800' },
+  resultMeta: { marginTop: 4, fontSize: 13, fontWeight: '600' },
+  scoreBadge: { width: 74, minHeight: 64, borderRadius: 18, borderWidth: 1, justifyContent: 'center', alignItems: 'center', padding: 8 },
+  scoreText: { fontSize: 24, fontWeight: '900' },
+  scoreLabel: { marginTop: 2, fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
+  actionRow: { flexDirection: 'row', gap: 8, marginTop: 12, flexWrap: 'wrap' },
+  smallButton: { minHeight: 40, borderRadius: 14, paddingHorizontal: 14, justifyContent: 'center', alignItems: 'center' },
+  smallOutlineButton: { minHeight: 40, borderRadius: 14, borderWidth: 1, paddingHorizontal: 14, justifyContent: 'center', alignItems: 'center' },
+  smallButtonText: { fontSize: 13, fontWeight: '900' },
+  buttonGroup: { gap: 12 },
+  button: { minHeight: 56, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
+  secondaryButton: { minHeight: 52, borderRadius: 18, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
+  buttonPressed: { transform: [{ scale: 0.98 }], opacity: 0.85 },
+  buttonText: { fontSize: 16, fontWeight: '900' },
+  secondaryButtonText: { fontSize: 16, fontWeight: '900' },
 });

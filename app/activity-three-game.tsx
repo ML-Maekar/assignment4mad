@@ -16,6 +16,8 @@ import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { saveAttempt } from '@/services/attemptService';
+import { savePhotoEvidence, saveVideoEvidence } from '@/services/videoStorageService';
+import { scheduleActivityCompleteNotification } from '@/utils/notifications';
 
 const FAN_DEMO_IMAGE = require('../assets/images/activity 3.png');
 
@@ -71,11 +73,15 @@ function degreesToRadians(degrees: number) {
 
 export default function ActivityThreeGame() {
   const { colors } = useAppTheme();
-  const { cameraGranted, askForCamera } = usePermissions();
+  // FIX: destructure both cameraGranted AND mediaLibraryGranted.
+  // Choose Photo and Choose Video must check mediaLibraryGranted (gallery access),
+  // not cameraGranted (camera capture).
+  const { cameraGranted, mediaLibraryGranted } = usePermissions();
 
   const [activeTab, setActiveTab] = useState<TabKey>('activity');
 
   const [designNumber, setDesignNumber] = useState(1);
+  // Shared fan design field — persists across tabs. DO NOT clear inside saveWriteUp().
   const [fanDesign, setFanDesign] = useState('');
   const [prediction, setPrediction] = useState('');
   const [selectedMaterial, setSelectedMaterial] = useState(TARGET_MATERIALS[0]);
@@ -88,11 +94,15 @@ export default function ActivityThreeGame() {
   const [surprises, setSurprises] = useState('');
 
   const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [photoFirebaseUrl, setPhotoFirebaseUrl] = useState<string | null>(null);
   const [videoUri, setVideoUri] = useState<string | null>(null);
+  const [videoFirebaseUrl, setVideoFirebaseUrl] = useState<string | null>(null);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [videoZoom, setVideoZoom] = useState(1);
+  const [isSavingMedia, setIsSavingMedia] = useState(false);
 
   const [savedWriteUps, setSavedWriteUps] = useState<WriteUpRecord[]>([]);
+  const [writeUpSavedFlash, setWriteUpSavedFlash] = useState(false);
   const [results, setResults] = useState<Result[]>([]);
   const [lastResult, setLastResult] = useState<Result | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -101,14 +111,46 @@ export default function ActivityThreeGame() {
   const zoomOutVideo = () => setVideoZoom((z) => Math.max(z - 0.25, 1));
   const resetVideoZoom = () => setVideoZoom(1);
 
+  // After taking a photo: save to gallery + upload to Firebase Storage
+  const handlePostPhotoSave = async (uri: string) => {
+    setIsSavingMedia(true);
+    try {
+      const { firebaseUrl } = await savePhotoEvidence({
+        localUri: uri,
+        activityKey: ACTIVITY_KEY,
+        mediaLibraryGranted,
+      });
+      if (firebaseUrl) setPhotoFirebaseUrl(firebaseUrl);
+    } catch {
+      // Silent fail — photo is still visible from local URI
+    } finally {
+      setIsSavingMedia(false);
+    }
+  };
+
+  // After recording a video: save to gallery + upload to Firebase Storage
+  const handlePostVideoSave = async (uri: string) => {
+    setIsSavingMedia(true);
+    try {
+      const { firebaseUrl } = await saveVideoEvidence({
+        localUri: uri,
+        activityKey: ACTIVITY_KEY,
+        mediaLibraryGranted,
+      });
+      if (firebaseUrl) setVideoFirebaseUrl(firebaseUrl);
+    } catch {
+      // Silent fail — video is still usable from local URI
+    } finally {
+      setIsSavingMedia(false);
+    }
+  };
+
   const takePhotoEvidence = async () => {
     if (!cameraGranted) {
-      const granted = await askForCamera();
-      if (!granted) return;
-    }
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('Camera Permission Needed', 'Please allow camera access.');
+      Alert.alert(
+        'Camera Disabled',
+        'Camera is turned off in Settings. Go to Settings → Permissions → Camera to enable it.'
+      );
       return;
     }
     const result = await ImagePicker.launchCameraAsync({
@@ -116,17 +158,22 @@ export default function ActivityThreeGame() {
       allowsEditing: false,
       quality: 1,
     });
-    if (!result.canceled) setPhotoUri(result.assets[0].uri);
+    if (!result.canceled) {
+      const uri = result.assets[0].uri;
+      setPhotoUri(uri);
+      setPhotoFirebaseUrl(null);
+      handlePostPhotoSave(uri);
+    }
   };
 
+  // FIX: choosePhotoEvidence now checks mediaLibraryGranted (gallery access),
+  // not cameraGranted.
   const choosePhotoEvidence = async () => {
-    if (!cameraGranted) {
-      const granted = await askForCamera();
-      if (!granted) return;
-    }
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('Media Permission Needed', 'Please allow gallery access.');
+    if (!mediaLibraryGranted) {
+      Alert.alert(
+        'Media Storage Disabled',
+        'Media Storage is turned off in Settings. Go to Settings → Permissions → Media Storage to enable it.'
+      );
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -134,17 +181,18 @@ export default function ActivityThreeGame() {
       allowsEditing: false,
       quality: 1,
     });
-    if (!result.canceled) setPhotoUri(result.assets[0].uri);
+    if (!result.canceled) {
+      setPhotoUri(result.assets[0].uri);
+      setPhotoFirebaseUrl(null);
+    }
   };
 
   const recordVideoEvidence = async () => {
     if (!cameraGranted) {
-      const granted = await askForCamera();
-      if (!granted) return;
-    }
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('Camera Permission Needed', 'Please allow camera access.');
+      Alert.alert(
+        'Camera Disabled',
+        'Camera is turned off in Settings. Go to Settings → Permissions → Camera to enable it.'
+      );
       return;
     }
     const result = await ImagePicker.launchCameraAsync({
@@ -154,19 +202,22 @@ export default function ActivityThreeGame() {
       videoMaxDuration: 30,
     });
     if (!result.canceled) {
-      setVideoUri(result.assets[0].uri);
+      const uri = result.assets[0].uri;
+      setVideoUri(uri);
+      setVideoFirebaseUrl(null);
       setVideoZoom(1);
+      handlePostVideoSave(uri);
     }
   };
 
+  // FIX: chooseVideoEvidence now checks mediaLibraryGranted (gallery access),
+  // not cameraGranted.
   const chooseVideoEvidence = async () => {
-    if (!cameraGranted) {
-      const granted = await askForCamera();
-      if (!granted) return;
-    }
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('Media Permission Needed', 'Please allow gallery access.');
+    if (!mediaLibraryGranted) {
+      Alert.alert(
+        'Media Storage Disabled',
+        'Media Storage is turned off in Settings. Go to Settings → Permissions → Media Storage to enable it.'
+      );
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -176,6 +227,7 @@ export default function ActivityThreeGame() {
     });
     if (!result.canceled) {
       setVideoUri(result.assets[0].uri);
+      setVideoFirebaseUrl(null);
       setVideoZoom(1);
     }
   };
@@ -203,18 +255,27 @@ export default function ActivityThreeGame() {
       surprises: surprises.trim(),
     };
 
-    setSavedWriteUps((currentWriteUps) => [newWriteUp, ...currentWriteUps]);
+    setSavedWriteUps((current) => [newWriteUp, ...current]);
 
-    // Clear fields after saving so user can enter next design fresh
-    setFanDesign('');
+    // FIX: Do NOT clear fanDesign here. The fan design field is shared between
+    // the Write Up tab and the Discussion tab's Calculate and Save button.
+    // Clearing it inside saveWriteUp() was the root cause of the
+    // "Missing Fan Design" alert firing even when the user had filled it in.
+    // Only clear the other write-up-specific fields.
     setPrediction('');
     setDistanceCm('');
     setBendAngleDegrees('');
     setOutcomeDegrees('');
     setObservationNotes('');
     setWasPredictionCorrect('');
+    setSurprises('');
 
-    Alert.alert('Write-Up Saved', `Design ${designNumber} write-up saved.`);
+    // Auto-increment design number for next write-up
+    setDesignNumber((current) => Math.min(current + 1, 3));
+
+    // Show ✓ flash for 2 seconds
+    setWriteUpSavedFlash(true);
+    setTimeout(() => setWriteUpSavedFlash(false), 2000);
   };
 
   const calculateAndSaveResult = async () => {
@@ -266,8 +327,11 @@ export default function ActivityThreeGame() {
           wasPredictionCorrect: wasPredictionCorrect.trim(),
           surprises: surprises.trim(),
           savedWriteUps,
+          // Local URIs + Firebase Storage URLs for both photo and video
           photoUri,
+          photoFirebaseUrl,
           videoUri,
+          videoFirebaseUrl,
           playbackRate,
           videoZoom,
           formula: 'F ≈ k × θ',
@@ -289,6 +353,8 @@ export default function ActivityThreeGame() {
 
       setLastResult(savedResult);
       setResults((current) => [savedResult, ...current]);
+
+      await scheduleActivityCompleteNotification(ACTIVITY_TITLE, approximateForce);
 
       Alert.alert(
         'Result Saved',
@@ -321,7 +387,9 @@ export default function ActivityThreeGame() {
     setWasPredictionCorrect('');
     setSurprises('');
     setPhotoUri(null);
+    setPhotoFirebaseUrl(null);
     setVideoUri(null);
+    setVideoFirebaseUrl(null);
     setPlaybackRate(1);
     setVideoZoom(1);
     setSavedWriteUps([]);
@@ -330,7 +398,6 @@ export default function ActivityThreeGame() {
     setActiveTab('activity');
   };
 
-  // ─── Tab renderer ─────────────────────────────────────────────
   const renderTabs = () => {
     const tabs: { key: TabKey; label: string }[] = [
       { key: 'activity', label: 'Activity' },
@@ -362,31 +429,34 @@ export default function ActivityThreeGame() {
     );
   };
 
-  // ─── Activity Tab ──────────────────────────────────────────────
   const renderActivityTab = () => (
     <View style={[styles.phoneLayoutCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+
+      {!cameraGranted && (
+        <View style={[styles.warningBanner, { backgroundColor: `${colors.danger}15`, borderColor: colors.danger }]}>
+          <Text style={[styles.warningText, { color: colors.danger }]}>
+            ⚠️ Camera is disabled. Go to Settings → Permissions → Camera to enable photos and video.
+          </Text>
+        </View>
+      )}
+
+      {!mediaLibraryGranted && (
+        <View style={[styles.warningBanner, { backgroundColor: `${colors.warning}15`, borderColor: colors.warning }]}>
+          <Text style={[styles.warningText, { color: colors.warning }]}>
+            ⚠️ Media Storage is disabled. Go to Settings → Permissions → Media Storage to save media to your gallery.
+          </Text>
+        </View>
+      )}
 
       <Text style={[styles.cardTitle, { color: colors.text }]}>Instructions</Text>
 
       <View style={[styles.instructionBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          1. Fold a piece of paper back and forward in 1 cm strips to make a hand fan.
-        </Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          2. Stand a piece of paper or cardboard upright on the table — sticky tape it if needed.
-        </Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          3. Position the phone to capture the upright paper from the side.
-        </Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          4. Fan air from 15 cm, 30 cm, or 45 cm away — keep the fan movement consistent.
-        </Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          5. Record video or photo to measure the bend angle of the paper.
-        </Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          6. Try different fan designs and different materials. Rotate for each team member.
-        </Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>1. Fold a piece of paper back and forward in 1 cm strips to make a hand fan.</Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>2. Stand a piece of paper or cardboard upright on the table — sticky tape it if needed.</Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>3. Position the phone to capture the upright paper from the side.</Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>4. Fan air from 15 cm, 30 cm, or 45 cm away — keep the fan movement consistent.</Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>5. Record video or photo to measure the bend angle of the paper.</Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>6. Try different fan designs and different materials. Rotate for each team member.</Text>
       </View>
 
       <View style={[styles.diagramBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
@@ -422,25 +492,35 @@ export default function ActivityThreeGame() {
             pressed && styles.buttonPressed,
           ]}
         >
-          <Text style={[styles.smallButtonText, { color: colors.buttonText }]}>Take Photo</Text>
+          <Text style={[styles.smallButtonText, { color: colors.buttonText }]}>
+            {cameraGranted ? 'Take Photo' : 'Camera Off'}
+          </Text>
         </Pressable>
 
+        {/* FIX: Choose Photo checks mediaLibraryGranted, not cameraGranted */}
         <Pressable
           onPress={choosePhotoEvidence}
           style={({ pressed }) => [
             styles.smallOutlineButton,
-            { borderColor: cameraGranted ? colors.tint : colors.border },
+            { borderColor: mediaLibraryGranted ? colors.tint : colors.subtitle },
             pressed && styles.buttonPressed,
           ]}
         >
-          <Text style={[styles.smallButtonText, { color: cameraGranted ? colors.tint : colors.subtitle }]}>
-            Choose Photo
+          <Text style={[styles.smallButtonText, { color: mediaLibraryGranted ? colors.tint : colors.subtitle }]}>
+            {mediaLibraryGranted ? 'Choose Photo' : 'Media Off'}
           </Text>
         </Pressable>
       </View>
 
       {photoUri ? (
-        <Image source={{ uri: photoUri }} style={styles.photo} resizeMode="cover" />
+        <>
+          <Image source={{ uri: photoUri }} style={styles.photo} resizeMode="cover" />
+          {photoFirebaseUrl && (
+            <Text style={[styles.body, { color: colors.success, marginBottom: 8 }]}>
+              ☁️ Photo backed up to cloud storage.
+            </Text>
+          )}
+        </>
       ) : (
         <Text style={[styles.body, { color: colors.subtitle }]}>
           Add a photo of the fan, upright material, and phone position.
@@ -457,22 +537,31 @@ export default function ActivityThreeGame() {
             pressed && styles.buttonPressed,
           ]}
         >
-          <Text style={[styles.smallButtonText, { color: colors.buttonText }]}>Record Video</Text>
+          <Text style={[styles.smallButtonText, { color: colors.buttonText }]}>
+            {cameraGranted ? 'Record Video' : 'Camera Off'}
+          </Text>
         </Pressable>
 
+        {/* FIX: Choose Video checks mediaLibraryGranted, not cameraGranted */}
         <Pressable
           onPress={chooseVideoEvidence}
           style={({ pressed }) => [
             styles.smallOutlineButton,
-            { borderColor: cameraGranted ? colors.tint : colors.border },
+            { borderColor: mediaLibraryGranted ? colors.tint : colors.subtitle },
             pressed && styles.buttonPressed,
           ]}
         >
-          <Text style={[styles.smallButtonText, { color: cameraGranted ? colors.tint : colors.subtitle }]}>
-            Choose Video
+          <Text style={[styles.smallButtonText, { color: mediaLibraryGranted ? colors.tint : colors.subtitle }]}>
+            {mediaLibraryGranted ? 'Choose Video' : 'Media Off'}
           </Text>
         </Pressable>
       </View>
+
+      {isSavingMedia && (
+        <Text style={[styles.body, { color: colors.subtitle, marginBottom: 8 }]}>
+          💾 Saving media to gallery…
+        </Text>
+      )}
 
       {videoUri ? (
         <>
@@ -486,6 +575,12 @@ export default function ActivityThreeGame() {
               shouldPlay={false}
             />
           </View>
+
+          {videoFirebaseUrl && (
+            <Text style={[styles.body, { color: colors.success, marginBottom: 8 }]}>
+              ☁️ Video backed up to cloud storage.
+            </Text>
+          )}
 
           <Text style={[styles.label, { color: colors.text }]}>Playback Speed</Text>
           <View style={styles.speedRow}>
@@ -504,9 +599,7 @@ export default function ActivityThreeGame() {
                     pressed && styles.buttonPressed,
                   ]}
                 >
-                  <Text style={[styles.speedText, { color: selected ? colors.tint : colors.text }]}>
-                    {speed}x
-                  </Text>
+                  <Text style={[styles.speedText, { color: selected ? colors.tint : colors.text }]}>{speed}x</Text>
                 </Pressable>
               );
             })}
@@ -531,7 +624,6 @@ export default function ActivityThreeGame() {
     </View>
   );
 
-  // ─── Write-up Tab ──────────────────────────────────────────────
   const renderWriteUpTab = () => (
     <View style={[styles.phoneLayoutCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <Text style={[styles.cardTitle, { color: colors.text }]}>Write Up</Text>
@@ -557,33 +649,17 @@ export default function ActivityThreeGame() {
                 pressed && styles.buttonPressed,
               ]}
             >
-              <Text style={[styles.optionText, { color: selected ? colors.tint : colors.text }]}>
-                {number}
-              </Text>
+              <Text style={[styles.optionText, { color: selected ? colors.tint : colors.text }]}>{number}</Text>
             </Pressable>
           );
         })}
       </View>
 
-      <TextInput
-        value={fanDesign}
-        onChangeText={setFanDesign}
-        placeholder="Fan design, e.g. 1 cm back-and-forward folds"
-        placeholderTextColor={colors.subtitle}
-        style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-      />
-
-      <TextInput
-        value={prediction}
-        onChangeText={setPrediction}
-        placeholder="Predict which fan design moves the paper most"
-        placeholderTextColor={colors.subtitle}
-        multiline
-        style={[styles.input, styles.multilineInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-      />
+      {/* Fan design field is shared — also used by Discussion tab's Calculate and Save */}
+      <TextInput value={fanDesign} onChangeText={setFanDesign} placeholder="Fan design, e.g. 1 cm back-and-forward folds" placeholderTextColor={colors.subtitle} style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]} />
+      <TextInput value={prediction} onChangeText={setPrediction} placeholder="Predict which fan design moves the paper most" placeholderTextColor={colors.subtitle} multiline style={[styles.input, styles.multilineInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]} />
 
       <Text style={[styles.label, { color: colors.text }]}>Results Table</Text>
-
       <View style={[styles.tableBox, { borderColor: colors.border, backgroundColor: colors.background }]}>
         <View style={[styles.tableRow, { borderColor: colors.border }]}>
           <Text style={[styles.tableHeader, { color: colors.text, flex: 2 }]}>Design</Text>
@@ -598,83 +674,34 @@ export default function ActivityThreeGame() {
         ) : (
           results.map((r) => (
             <View key={r.id} style={[styles.tableRow, { borderColor: colors.border }]}>
-              <Text style={[styles.tableCell, { color: colors.text, flex: 2 }]} numberOfLines={2}>
-                {r.fanDesign}
-              </Text>
-              <Text style={[styles.tableCell, { color: colors.subtitle, flex: 1 }]}>
-                {r.distanceCm}
-              </Text>
-              <Text style={[styles.tableCell, { color: colors.subtitle, flex: 1 }]}>
-                {r.bendAngleDegrees}°
-              </Text>
-              <Text style={[styles.tableCell, { color: colors.success, flex: 1 }]}>
-                {r.approximateForce.toFixed(3)}
-              </Text>
+              <Text style={[styles.tableCell, { color: colors.text, flex: 2 }]} numberOfLines={2}>{r.fanDesign}</Text>
+              <Text style={[styles.tableCell, { color: colors.subtitle, flex: 1 }]}>{r.distanceCm}</Text>
+              <Text style={[styles.tableCell, { color: colors.subtitle, flex: 1 }]}>{r.bendAngleDegrees}°</Text>
+              <Text style={[styles.tableCell, { color: colors.success, flex: 1 }]}>{r.approximateForce.toFixed(3)}</Text>
             </View>
           ))
         )}
       </View>
 
-      <TextInput
-        value={distanceCm}
-        onChangeText={setDistanceCm}
-        placeholder="Fan distance in cm, e.g. 30"
-        placeholderTextColor={colors.subtitle}
-        keyboardType="decimal-pad"
-        style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-      />
+      <TextInput value={distanceCm} onChangeText={setDistanceCm} placeholder="Fan distance in cm, e.g. 30" placeholderTextColor={colors.subtitle} keyboardType="decimal-pad" style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]} />
+      <TextInput value={bendAngleDegrees} onChangeText={setBendAngleDegrees} placeholder="Bend angle in degrees, e.g. 30" placeholderTextColor={colors.subtitle} keyboardType="decimal-pad" style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]} />
+      <TextInput value={outcomeDegrees} onChangeText={setOutcomeDegrees} placeholder="Outcome in degrees" placeholderTextColor={colors.subtitle} keyboardType="decimal-pad" style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]} />
+      <TextInput value={observationNotes} onChangeText={setObservationNotes} placeholder="Observation notes — what did you notice?" placeholderTextColor={colors.subtitle} multiline style={[styles.input, styles.multilineInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]} />
+      <TextInput value={wasPredictionCorrect} onChangeText={setWasPredictionCorrect} placeholder="Were you right? Explain why or why not." placeholderTextColor={colors.subtitle} multiline style={[styles.input, styles.multilineInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]} />
+      <TextInput value={surprises} onChangeText={setSurprises} placeholder="Any surprises during testing?" placeholderTextColor={colors.subtitle} multiline style={[styles.input, styles.multilineInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]} />
 
-      <TextInput
-        value={bendAngleDegrees}
-        onChangeText={setBendAngleDegrees}
-        placeholder="Bend angle in degrees, e.g. 30"
-        placeholderTextColor={colors.subtitle}
-        keyboardType="decimal-pad"
-        style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-      />
-
-      <TextInput
-        value={outcomeDegrees}
-        onChangeText={setOutcomeDegrees}
-        placeholder="Outcome in degrees"
-        placeholderTextColor={colors.subtitle}
-        keyboardType="decimal-pad"
-        style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-      />
-
-      <TextInput
-        value={observationNotes}
-        onChangeText={setObservationNotes}
-        placeholder="Observation notes — what did you notice?"
-        placeholderTextColor={colors.subtitle}
-        multiline
-        style={[styles.input, styles.multilineInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-      />
-
-      <TextInput
-        value={wasPredictionCorrect}
-        onChangeText={setWasPredictionCorrect}
-        placeholder="Were you right? Explain why or why not."
-        placeholderTextColor={colors.subtitle}
-        multiline
-        style={[styles.input, styles.multilineInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-      />
-
-      <TextInput
-        value={surprises}
-        onChangeText={setSurprises}
-        placeholder="Any surprises during testing?"
-        placeholderTextColor={colors.subtitle}
-        multiline
-        style={[styles.input, styles.multilineInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-      />
-
-      <Pressable
-        onPress={saveWriteUp}
-        style={({ pressed }) => [styles.button, { backgroundColor: colors.tint }, pressed && styles.buttonPressed]}
-      >
-        <Text style={[styles.buttonText, { color: colors.buttonText }]}>Save Write-Up</Text>
-      </Pressable>
+      {writeUpSavedFlash ? (
+        <View style={[styles.flashBox, { backgroundColor: `${colors.success}15`, borderColor: colors.success }]}>
+          <Text style={[styles.flashText, { color: colors.success }]}>✓ Write-up saved</Text>
+        </View>
+      ) : (
+        <Pressable
+          onPress={saveWriteUp}
+          style={({ pressed }) => [styles.button, { backgroundColor: colors.tint }, pressed && styles.buttonPressed]}
+        >
+          <Text style={[styles.buttonText, { color: colors.buttonText }]}>Save Write-Up</Text>
+        </Pressable>
+      )}
 
       {savedWriteUps.length > 0 && (
         <View style={[styles.resultBox, { borderColor: colors.border }]}>
@@ -691,19 +718,14 @@ export default function ActivityThreeGame() {
     </View>
   );
 
-  // ─── Discussion Tab ────────────────────────────────────────────
   const renderDiscussionTab = () => (
     <View style={[styles.phoneLayoutCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <Text style={[styles.cardTitle, { color: colors.text }]}>Discussion</Text>
 
       <View style={[styles.discussionBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
         <Text style={[styles.discussionHeading, { color: colors.text }]}>How a Hand Fan Creates Force</Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          Moving air applies force to objects. When you wave a fan, it pushes air molecules toward the upright paper, creating a pressure difference that bends it. The more air you move, the greater the force.
-        </Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          Repeated bending can weaken paper fibres, making it easier to bend over time.
-        </Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>Moving air applies force to objects. When you wave a fan, it pushes air molecules toward the upright paper, creating a pressure difference that bends it. The more air you move, the greater the force.</Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>Repeated bending can weaken paper fibres, making it easier to bend over time.</Text>
       </View>
 
       <View style={[styles.discussionBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
@@ -712,9 +734,7 @@ export default function ActivityThreeGame() {
         <Text style={[styles.body, { color: colors.subtitle }]}>F = approximate force (N)</Text>
         <Text style={[styles.body, { color: colors.subtitle }]}>k = stiffness coefficient of the material</Text>
         <Text style={[styles.body, { color: colors.subtitle }]}>θ = bend angle in radians</Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          High school challenge: if k = 0.5, estimate the bending force from your angle measurement.
-        </Text>
+        <Text style={[styles.body, { color: colors.subtitle }]}>High school challenge: if k = 0.5, estimate the bending force from your angle measurement.</Text>
       </View>
 
       <View style={[styles.discussionBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
@@ -735,7 +755,6 @@ export default function ActivityThreeGame() {
         </View>
       </View>
 
-      {/* Material selector */}
       <Text style={[styles.label, { color: colors.text }]}>Select Target Material</Text>
       <View style={styles.optionGrid}>
         {TARGET_MATERIALS.map((material) => {
@@ -753,12 +772,8 @@ export default function ActivityThreeGame() {
                 pressed && styles.buttonPressed,
               ]}
             >
-              <Text style={[styles.optionText, { color: selected ? colors.tint : colors.text }]}>
-                {material.label}
-              </Text>
-              <Text style={[styles.smallInfo, { color: colors.subtitle }]}>
-                Thickness: {material.thicknessMm} mm | k = {material.stiffness} N/rad
-              </Text>
+              <Text style={[styles.optionText, { color: selected ? colors.tint : colors.text }]}>{material.label}</Text>
+              <Text style={[styles.smallInfo, { color: colors.subtitle }]}>Thickness: {material.thicknessMm} mm | k = {material.stiffness} N/rad</Text>
               <Text style={[styles.smallInfo, { color: colors.subtitle }]}>{material.note}</Text>
             </Pressable>
           );
@@ -788,9 +803,7 @@ export default function ActivityThreeGame() {
           <Text style={[styles.body, { color: colors.subtitle }]}>Stiffness k: {lastResult.stiffness} N/rad</Text>
           <Text style={[styles.body, { color: colors.subtitle }]}>Distance: {lastResult.distanceCm} cm</Text>
           <Text style={[styles.body, { color: colors.subtitle }]}>Bend angle: {lastResult.bendAngleDegrees}°</Text>
-          <Text style={[styles.score, { color: colors.success }]}>
-            Approx. Force: {lastResult.approximateForce.toFixed(3)} N
-          </Text>
+          <Text style={[styles.score, { color: colors.success }]}>Approx. Force: {lastResult.approximateForce.toFixed(3)} N</Text>
         </View>
       )}
 
@@ -808,24 +821,15 @@ export default function ActivityThreeGame() {
         <Text style={[styles.body, { color: colors.subtitle }]}>• ACSIS126 – Measuring and recording data</Text>
       </View>
 
-      <Pressable
-        onPress={() => router.push('/result-history?activityKey=activity-three' as never)}
-        style={({ pressed }) => [styles.secondaryButton, { borderColor: colors.tint }, pressed && styles.buttonPressed]}
-      >
+      <Pressable onPress={() => router.push('/result-history?activityKey=activity-three' as never)} style={({ pressed }) => [styles.secondaryButton, { borderColor: colors.tint }, pressed && styles.buttonPressed]}>
         <Text style={[styles.secondaryButtonText, { color: colors.tint }]}>Open Result History</Text>
       </Pressable>
 
-      <Pressable
-        onPress={() => router.push('/leaderboard?activityKey=activity-three' as never)}
-        style={({ pressed }) => [styles.secondaryButton, { borderColor: colors.tint }, pressed && styles.buttonPressed]}
-      >
+      <Pressable onPress={() => router.push('/leaderboard?activityKey=activity-three' as never)} style={({ pressed }) => [styles.secondaryButton, { borderColor: colors.tint }, pressed && styles.buttonPressed]}>
         <Text style={[styles.secondaryButtonText, { color: colors.tint }]}>View Leaderboard</Text>
       </Pressable>
 
-      <Pressable
-        onPress={clearTest}
-        style={({ pressed }) => [styles.secondaryButton, { borderColor: colors.border }, pressed && styles.buttonPressed]}
-      >
+      <Pressable onPress={clearTest} style={({ pressed }) => [styles.secondaryButton, { borderColor: colors.border }, pressed && styles.buttonPressed]}>
         <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Clear Test</Text>
       </Pressable>
 
@@ -853,73 +857,32 @@ const styles = StyleSheet.create({
   header: { marginBottom: 20 },
   title: { fontSize: 32, fontWeight: '900' },
   subtitle: { marginTop: 8, fontSize: 16, lineHeight: 22 },
-  phoneLayoutCard: {
-    borderWidth: 2,
-    borderRadius: 24,
-    padding: 18,
-    marginBottom: 16,
-    minHeight: 620,
-  },
+  phoneLayoutCard: { borderWidth: 2, borderRadius: 24, padding: 18, marginBottom: 16, minHeight: 620 },
   cardTitle: { fontSize: 20, fontWeight: '900', marginBottom: 12 },
   label: { fontSize: 15, fontWeight: '800', marginBottom: 8, marginTop: 4 },
   body: { fontSize: 15, lineHeight: 22 },
-  warningBox: {
-    borderWidth: 2,
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 12,
-  },
-  warningText: { fontSize: 14, fontWeight: '800', lineHeight: 20 },
-  instructionBox: {
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 16,
-    gap: 6,
-  },
-  diagramBox: {
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 16,
-    gap: 4,
-  },
+  warningBanner: { borderWidth: 1, borderRadius: 14, padding: 12, marginBottom: 14 },
+  warningText: { fontSize: 14, fontWeight: '700', lineHeight: 20 },
+  flashBox: { borderWidth: 1, borderRadius: 14, padding: 14, marginTop: 8, alignItems: 'center' },
+  flashText: { fontSize: 15, fontWeight: '900' },
+  instructionBox: { borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 16, gap: 6 },
+  diagramBox: { borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 16, gap: 4 },
   diagramTitle: { fontSize: 15, fontWeight: '800', marginBottom: 8 },
   diagramText: { fontSize: 14, lineHeight: 22 },
   demoImage: { width: '100%', height: 260, marginBottom: 18 },
   photo: { width: '100%', height: 220, borderRadius: 16, marginTop: 10, marginBottom: 12 },
-  bottomTabRow: {
-    marginTop: 'auto',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    borderTopWidth: 1,
-    paddingTop: 12,
-    gap: 4,
-  },
+  bottomTabRow: { marginTop: 'auto', flexDirection: 'row', justifyContent: 'center', borderTopWidth: 1, paddingTop: 12, gap: 4 },
   bottomTabButton: { paddingHorizontal: 6, paddingBottom: 4, borderBottomWidth: 2 },
   bottomTabText: { fontSize: 13, fontWeight: '700' },
   input: { borderWidth: 1, borderRadius: 14, padding: 14, fontSize: 15, marginBottom: 12 },
   multilineInput: { minHeight: 90, textAlignVertical: 'top' },
   optionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 14 },
   optionGrid: { gap: 10, marginBottom: 14 },
-  smallChoice: {
-    width: 58,
-    minHeight: 46,
-    borderWidth: 1,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  smallChoice: { width: 58, minHeight: 46, borderWidth: 1, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
   materialButton: { borderWidth: 1, borderRadius: 14, padding: 12 },
   optionText: { fontSize: 14, fontWeight: '900' },
   smallInfo: { marginTop: 4, fontSize: 12, lineHeight: 17, fontWeight: '600' },
-  mediaButtonRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginTop: 12,
-    marginBottom: 12,
-  },
+  mediaButtonRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12, marginBottom: 12 },
   smallButton: { minHeight: 44, borderRadius: 14, paddingHorizontal: 14, justifyContent: 'center', alignItems: 'center' },
   smallOutlineButton: { minHeight: 44, borderRadius: 14, borderWidth: 1, paddingHorizontal: 14, justifyContent: 'center', alignItems: 'center' },
   smallButtonText: { fontSize: 13, fontWeight: '900' },

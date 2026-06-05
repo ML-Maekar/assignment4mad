@@ -92,7 +92,7 @@ const permissionOptions: PermissionOption[] = [
   {
     key: 'media',
     title: 'Media Storage',
-    description: 'Used to save or select videos, images and activity files.',
+    description: 'Required for Activities 1 and 3 — saves recorded videos and photos to your device gallery and enables picking existing media.',
   },
   {
     key: 'battery',
@@ -123,12 +123,14 @@ const initialPermissions: Record<PermissionKey, boolean> = {
   ads: false,
 };
 
+// Permissions that are fully wired to the real permission system
 const CONNECTED_PERMISSIONS: PermissionKey[] = [
   'camera',
   'microphone',
   'motion',
   'battery',
   'notifications',
+  'media',
 ];
 
 export default function SettingScreen() {
@@ -140,6 +142,7 @@ export default function SettingScreen() {
     batteryGranted,
     cameraGranted,
     micGranted,
+    mediaLibraryGranted,
     enableMotionFromSettings,
     disableMotionFromSettings,
     enableBattery,
@@ -148,6 +151,8 @@ export default function SettingScreen() {
     disableCameraFromSettings,
     enableMicFromSettings,
     disableMicFromSettings,
+    enableMediaLibraryFromSettings,
+    disableMediaLibraryFromSettings,
   } = usePermissions();
 
   const [permissions, setPermissions] =
@@ -164,11 +169,12 @@ export default function SettingScreen() {
         battery: batteryGranted,
         camera: cameraGranted,
         microphone: micGranted,
+        media: mediaLibraryGranted,
       }));
     }
 
     loadPermissionStatuses();
-  }, [motionGranted, batteryGranted, cameraGranted, micGranted]);
+  }, [motionGranted, batteryGranted, cameraGranted, micGranted, mediaLibraryGranted]);
 
   const updatePermission = (key: PermissionKey, value: boolean) => {
     setPermissions((currentPermissions) => ({
@@ -359,7 +365,7 @@ export default function SettingScreen() {
               text: 'Turn Off',
               style: 'destructive',
               onPress: async () => {
-                await disableMicFromSettings();
+                await disableMicFromSettings()
                 updatePermission('microphone', false);
               },
             },
@@ -375,6 +381,51 @@ export default function SettingScreen() {
             );
           }
         });
+      }
+      return;
+    }
+
+    // Media Storage — connected to real permissionService
+    // Controls: picking from gallery (Activities 1 & 3) and saving recorded
+    // videos/photos to the device Camera Roll / STEMM Lab album.
+    if (permission.key === 'media') {
+      if (permissions.media) {
+        Alert.alert(
+          'Turn Off Media Storage?',
+          'Activities 1 and 3 will no longer be able to choose existing videos or photos, and recorded videos will not be saved to your gallery.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Turn Off',
+              style: 'destructive',
+              onPress: async () => {
+                await disableMediaLibraryFromSettings();
+                updatePermission('media', false);
+              },
+            },
+          ]
+        );
+      } else {
+        Alert.alert(
+          'Allow Media Storage?',
+          'STEMM Lab will save recorded videos and photos from Activities 1 and 3 to your device gallery, and let you choose existing media from your library.',
+          [
+            { text: 'Not Now', style: 'cancel' },
+            {
+              text: 'Allow',
+              onPress: async () => {
+                const granted = await enableMediaLibraryFromSettings();
+                updatePermission('media', granted);
+                if (granted) {
+                  Alert.alert(
+                    'Media Storage Enabled',
+                    'Videos and photos from Activities 1 and 3 will now be saved to your gallery.'
+                  );
+                }
+              },
+            },
+          ]
+        );
       }
       return;
     }
@@ -574,9 +625,9 @@ export default function SettingScreen() {
         </Text>
 
         <Text style={[styles.sectionDescription, { color: colors.subtitle }]}>
-          Camera, Microphone, Motion Sensors, Battery, and Notifications are
-          connected to the real permission system. Toggling them here affects
-          the whole app.
+          Camera, Microphone, Motion Sensors, Battery, Notifications, and Media
+          Storage are connected to the real permission system. Toggling them
+          here affects the whole app.
         </Text>
 
         <View style={styles.permissionContainer}>
@@ -728,10 +779,9 @@ export default function SettingScreen() {
         </Text>
 
         <Text style={[styles.infoText, { color: colors.subtitle }]}>
-          Camera, Microphone, Motion Sensors, Battery, and Notifications are
-          now fully connected to real phone permissions. Location, Media
-          Storage, Background Tasks, and Ads will be connected in a later
-          update.
+          Camera, Microphone, Motion Sensors, Battery, Notifications, and Media
+          Storage are now fully connected to real phone permissions. Location,
+          Background Tasks, and Ads will be connected in a later update.
         </Text>
       </View>
     </ScrollView>

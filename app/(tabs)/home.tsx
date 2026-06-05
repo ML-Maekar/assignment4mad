@@ -6,9 +6,12 @@ import {
   Text,
   View,
 } from 'react-native';
+import { BannerAd, BannerAdSize } from 'react-native-google-mobile-ads';
 
 import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
+
+const BANNER_AD_UNIT_ID = 'ca-app-pub-2966645425515948/1766364031';
 
 const screens = [
   {
@@ -55,7 +58,6 @@ export default function HomeScreen() {
     <AppScreen>
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.text }]}>STEMM Lab</Text>
-
         <Text style={[styles.subtitle, { color: colors.subtitle }]}>
           Choose an activity to start your STEMM challenge.
         </Text>
@@ -67,10 +69,7 @@ export default function HomeScreen() {
             key={screen.title}
             style={({ pressed }) => [
               styles.tab,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-              },
+              { backgroundColor: colors.card, borderColor: colors.border },
               pressed && styles.tabPressed,
             ]}
             onPress={() => router.push(screen.route as never)}
@@ -85,7 +84,6 @@ export default function HomeScreen() {
               <Text style={[styles.tabTitle, { color: colors.text }]}>
                 {screen.title}
               </Text>
-
               <Text style={[styles.tabDescription, { color: colors.subtitle }]}>
                 {screen.description}
               </Text>
@@ -97,22 +95,16 @@ export default function HomeScreen() {
       </View>
 
       <View style={styles.resultsSection}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>
-          Results
-        </Text>
-
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>Results</Text>
         <Text style={[styles.sectionSubtitle, { color: colors.subtitle }]}>
           View saved activity attempts and compare scores across activities.
         </Text>
 
         <Pressable
-            onPress={() => router.push('/result-history' as never)}
-            style={({ pressed }) => [
-            styles.resultOutlineButton,      // ← same as leaderboard
-            {
-              backgroundColor: colors.card,  // ← same as leaderboard
-              borderColor: colors.tint,
-            },
+          onPress={() => router.push('/result-history' as never)}
+          style={({ pressed }) => [
+            styles.resultOutlineButton,
+            { backgroundColor: colors.card, borderColor: colors.tint },
             pressed && styles.tabPressed,
           ]}
         >
@@ -120,28 +112,18 @@ export default function HomeScreen() {
             <Text style={[styles.resultButtonTitle, { color: colors.tint }]}>
               Result History
             </Text>
-            <Text
-              style={[
-                styles.resultButtonDescription,
-                { color: colors.subtitle },
-              ]}
-            >
+            <Text style={[styles.resultButtonDescription, { color: colors.subtitle }]}>
               View all saved attempts from newest to oldest
             </Text>
           </View>
-          <Text style={[styles.resultArrow, { color: colors.tint }]}>
-          ›
-          </Text>
+          <Text style={[styles.resultArrow, { color: colors.tint }]}>›</Text>
         </Pressable>
 
         <Pressable
           onPress={() => router.push('/leaderboard' as never)}
           style={({ pressed }) => [
             styles.resultOutlineButton,
-            {
-              backgroundColor: colors.card,
-              borderColor: colors.tint,
-            },
+            { backgroundColor: colors.card, borderColor: colors.tint },
             pressed && styles.tabPressed,
           ]}
         >
@@ -149,40 +131,31 @@ export default function HomeScreen() {
             <Text style={[styles.resultButtonTitle, { color: colors.tint }]}>
               Leaderboard
             </Text>
-
-            <Text
-              style={[
-                styles.resultButtonDescription,
-                { color: colors.subtitle },
-              ]}
-            >
+            <Text style={[styles.resultButtonDescription, { color: colors.subtitle }]}>
               Rank results by highest score across all activities
             </Text>
           </View>
-
           <Text style={[styles.resultArrow, { color: colors.tint }]}>›</Text>
         </Pressable>
+      </View>
+
+      {/* AdMob Banner Ad */}
+      <View style={styles.adContainer}>
+        <BannerAd
+          unitId={BANNER_AD_UNIT_ID}
+          size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
+          requestOptions={{ requestNonPersonalizedAdsOnly: true }}
+        />
       </View>
     </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    marginBottom: 28,
-  },
-  title: {
-    fontSize: 34,
-    fontWeight: '800',
-  },
-  subtitle: {
-    marginTop: 8,
-    fontSize: 16,
-    lineHeight: 22,
-  },
-  tabsContainer: {
-    gap: 14,
-  },
+  header: { marginBottom: 28 },
+  title: { fontSize: 34, fontWeight: '800' },
+  subtitle: { marginTop: 8, fontSize: 16, lineHeight: 22 },
+  tabsContainer: { gap: 14 },
   tab: {
     minHeight: 82,
     borderRadius: 18,
@@ -194,16 +167,10 @@ const styles = StyleSheet.create({
     shadowColor: '#000',
     shadowOpacity: 0.08,
     shadowRadius: 12,
-    shadowOffset: {
-      width: 0,
-      height: 6,
-    },
+    shadowOffset: { width: 0, height: 6 },
     elevation: 4,
   },
-  tabPressed: {
-    transform: [{ scale: 0.98 }],
-    opacity: 0.85,
-  },
+  tabPressed: { transform: [{ scale: 0.98 }], opacity: 0.85 },
   numberCircle: {
     width: 44,
     height: 44,
@@ -212,55 +179,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 16,
   },
-  numberText: {
-    fontSize: 17,
-    fontWeight: '700',
-  },
-  tabTextContainer: {
-    flex: 1,
-  },
-  tabTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-  },
-  tabDescription: {
-    marginTop: 4,
-    fontSize: 14,
-  },
-  arrow: {
-    fontSize: 34,
-    marginLeft: 12,
-  },
-  resultsSection: {
-    marginTop: 30,
-    gap: 14,
-  },
-  sectionTitle: {
-    fontSize: 24,
-    fontWeight: '900',
-  },
-  sectionSubtitle: {
-    marginTop: -6,
-    fontSize: 15,
-    lineHeight: 21,
-  },
-  resultButton: {
-    minHeight: 82,
-    borderRadius: 18,
-    borderWidth: 1,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    shadowOffset: {
-      width: 0,
-      height: 6,
-    },
-    elevation: 4,
-  },
+  numberText: { fontSize: 17, fontWeight: '700' },
+  tabTextContainer: { flex: 1 },
+  tabTitle: { fontSize: 17, fontWeight: '700' },
+  tabDescription: { marginTop: 4, fontSize: 14 },
+  arrow: { fontSize: 34, marginLeft: 12 },
+  resultsSection: { marginTop: 30, gap: 14 },
+  sectionTitle: { fontSize: 24, fontWeight: '900' },
+  sectionSubtitle: { marginTop: -6, fontSize: 15, lineHeight: 21 },
   resultOutlineButton: {
     minHeight: 82,
     borderRadius: 18,
@@ -272,26 +198,16 @@ const styles = StyleSheet.create({
     shadowColor: '#000',
     shadowOpacity: 0.08,
     shadowRadius: 12,
-    shadowOffset: {
-      width: 0,
-      height: 6,
-    },
+    shadowOffset: { width: 0, height: 6 },
     elevation: 4,
   },
-  resultButtonTextContainer: {
-    flex: 1,
-  },
-  resultButtonTitle: {
-    fontSize: 17,
-    fontWeight: '900',
-  },
-  resultButtonDescription: {
-    marginTop: 4,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  resultArrow: {
-    fontSize: 34,
-    marginLeft: 12,
+  resultButtonTextContainer: { flex: 1 },
+  resultButtonTitle: { fontSize: 17, fontWeight: '900' },
+  resultButtonDescription: { marginTop: 4, fontSize: 14, fontWeight: '600' },
+  resultArrow: { fontSize: 34, marginLeft: 12 },
+  adContainer: {
+    alignItems: 'center',
+    marginTop: 24,
+    marginBottom: 8,
   },
 });

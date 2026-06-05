@@ -12,63 +12,11 @@ import {
 
 import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
-import { usePermissions } from '@/contexts/PermissionsContext';
-import { saveAttempt } from '@/services/attemptService';
-import { scheduleActivityCompleteNotification } from '@/utils/notifications';
-import {
-  deleteOfflineDraftByKey,
-  getOfflineDraftByKey,
-  parseOfflineDraftData,
-  saveOfflineDraft,
-} from '@/utils/offlineDraftsDb';
+import { findTeamByDiscriminator, saveTeamSetup } from '@/services/teamService';
+import { requestLocationPermission } from '@/utils/locationService';
+import { saveLocalTeamProfile } from '@/utils/teamProfileStorage';
 
-type TabKey = 'activity' | 'writeup' | 'discussion';
-
-type SoundResult = {
-  id: number;
-  actionName: string;
-  locationName: string;
-  maximumSoundDb: number;
-  hearingRisk: string;
-  hearingRiskMessage: string;
-  prediction: string;
-  wasCorrect: string;
-};
-
-type ActivityTwoDraftData = {
-  actionName?: string;
-  locationName?: string;
-  prediction?: string;
-  wasCorrect?: string;
-  surprises?: string;
-  earMuffAnswer?: string;
-};
-
-type SoundRisk = {
-  label: string;
-  example: string;
-  message: string;
-};
-
-const ACTIVITY_KEY = 'activity-two';
-const ACTIVITY_TITLE = 'Sound Pollution Hunter';
-const DRAFT_KEY = 'activity-two-sound-draft';
-
-const RISK_TABLE = [
-  { range: '0–30 dB', example: 'Whisper, quiet library', risk: 'No risk' },
-  { range: '30–60 dB', example: 'Normal conversation, classroom noise', risk: 'Safe for long periods' },
-  { range: '60–85 dB', example: 'Busy traffic, vacuum cleaner', risk: 'Generally safe, but long exposure can cause fatigue' },
-  { range: '85–90 dB', example: 'Lawn mower, loud classroom, heavy traffic', risk: 'Hearing damage possible after long exposure' },
-  { range: '90–100 dB', example: 'Motorbike, power tools, loud music', risk: 'Hearing damage likely after short exposure' },
-  { range: '100–110 dB', example: 'Nightclub, rock concert, chainsaw', risk: 'Serious hearing damage in minutes' },
-  { range: '110–120 dB', example: 'Siren close by, car horn at 1 m', risk: 'Painful; immediate damage possible' },
-  { range: '120–130 dB', example: 'Jet engine close', risk: 'Immediate and severe hearing damage' },
-  { range: '140+ dB', example: 'Explosion, gunshot', risk: 'Instant, permanent hearing damage' },
-];
-
-function clamp(value: number, minimum: number, maximum: number) {
-  return Math.min(Math.max(value, minimum), maximum);
-}
+const MAX_TEAM_MEMBERS = 10;
 
 function estimateDbFromMetering(metering: number | undefined, actionName: string) {
   const action = actionName.toLowerCase();
@@ -105,53 +53,46 @@ function getSoundRisk(db: number): SoundRisk {
   return { label: 'Instant permanent damage risk', example: 'Explosion, gunshot', message: 'This sound level can cause instant permanent damage.' };
 }
 
-export default function ActivityTwoGame() {
+// Ask for GPS permission after team setup
+// Silent if denied — location just won't be tagged on results
+async function askForLocationAfterSetup() {
+  await requestLocationPermission();
+}
+
+export default function TeamSetupScreen() {
   const { colors } = useAppTheme();
   const { micGranted, askForMic } = usePermissions();
 
-  const [activeTab, setActiveTab] = useState<TabKey>('activity');
-  const [hasPermission, setHasPermission] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabKey>('create');
+
+  const [teamName, setTeamName] = useState('');
+  const [memberCount, setMemberCount] = useState('2');
+  const [memberNames, setMemberNames] = useState(['', '']);
+  const [gradeLevel, setGradeLevel] = useState('');
+  const [teamDiscriminator] = useState(createTeamDiscriminator());
   const [isSaving, setIsSaving] = useState(false);
 
-  const [actionName, setActionName] = useState('');
-  const [locationName, setLocationName] = useState('');
-  const [prediction, setPrediction] = useState('');
-  const [wasCorrect, setWasCorrect] = useState('');
-  const [surprises, setSurprises] = useState('');
-  const [earMuffAnswer, setEarMuffAnswer] = useState('');
+  const [joinCode, setJoinCode] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [foundTeam, setFoundTeam] = useState<{
+    teamName: string;
+    memberNames: string[];
+    gradeLevel: string;
+    teamDiscriminator: string;
+  } | null>(null);
 
-  const [currentDb, setCurrentDb] = useState(0);
-  const [maxDb, setMaxDb] = useState(0);
-  const [results, setResults] = useState<SoundResult[]>([]);
-  const [savedResultId, setSavedResultId] = useState<number | null>(null);
-  const [draftStatus, setDraftStatus] = useState<'idle' | 'saved' | 'error'>('idle');
+  const countValue = useMemo(() => {
+    const parsedCount = Number(memberCount);
+    if (Number.isNaN(parsedCount)) return 0;
+    return parsedCount;
+  }, [memberCount]);
 
-  const recordingRef = useRef<Audio.Recording | null>(null);
-  const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hasLoadedDraftRef = useRef(false);
-  const actionNameRef = useRef('');
-  const locationNameRef = useRef('');
-  const predictionRef = useRef('');
-  const wasCorrectRef = useRef('');
-  const surprisesRef = useRef('');
-  const earMuffAnswerRef = useRef('');
-  const maxDbRef = useRef(0);
-  const currentDbRef = useRef(0);
+  const updateMemberCount = (value: string) => {
+    setMemberCount(value);
+    const parsedCount = Number(value);
 
-  useEffect(() => { actionNameRef.current = actionName; }, [actionName]);
-  useEffect(() => { locationNameRef.current = locationName; }, [locationName]);
-  useEffect(() => { predictionRef.current = prediction; }, [prediction]);
-  useEffect(() => { wasCorrectRef.current = wasCorrect; }, [wasCorrect]);
-  useEffect(() => { surprisesRef.current = surprises; }, [surprises]);
-  useEffect(() => { earMuffAnswerRef.current = earMuffAnswer; }, [earMuffAnswer]);
-  useEffect(() => { maxDbRef.current = maxDb; }, [maxDb]);
-  useEffect(() => { currentDbRef.current = currentDb; }, [currentDb]);
-
-  useEffect(() => {
-    async function requestPermission() {
-      const permission = await Audio.requestPermissionsAsync();
-      setHasPermission(permission.granted);
+    if (Number.isNaN(parsedCount) || parsedCount < 1 || parsedCount > MAX_TEAM_MEMBERS) {
+      return;
     }
     requestPermission();
   }, []);
@@ -248,8 +189,12 @@ export default function ActivityTwoGame() {
     );
   };
 
-  const startRecording = async () => {
-    if (isRecording || isSaving) return;
+  const saveTeam = async () => {
+    const cleanTeamName = teamName.trim();
+    const cleanGradeLevel = gradeLevel.trim();
+    const cleanMemberNames = memberNames
+      .map((name) => name.trim())
+      .filter((name) => name.length > 0);
 
     if (savedResultId !== null) {
       Alert.alert('Result Already Saved', 'Press Clear Test to record a new sound.');
@@ -307,20 +252,39 @@ export default function ActivityTwoGame() {
         setMaxDb(maxDbRef.current);
       });
 
-      recording.setProgressUpdateInterval(250);
-      await recording.startAsync();
-
-      recordingRef.current = recording;
-      setIsRecording(true);
+      Alert.alert(
+        'Team Created',
+        `Your team has been saved.\n\nYour team code is: ${teamDiscriminator}\n\nShare this code with your team so they can join later.`,
+        [
+          {
+            text: 'Continue',
+            onPress: async () => {
+              // Ask for GPS permission after team is created
+              // Silent if denied — results save fine without location
+              await askForLocationAfterSetup();
+              router.replace('/(tabs)/home' as never);
+            },
+          },
+        ]
+      );
     } catch (error) {
       console.log('Failed to start Activity 2 recording:', error);
       Alert.alert('Recording Failed', 'Could not start the sound recording.');
     }
   };
 
-  const stopRecording = async () => {
-    const recording = recordingRef.current;
-    if (!recording) return;
+  const searchForTeam = async () => {
+    const cleanCode = joinCode.trim().toUpperCase();
+
+    if (!cleanCode) {
+      Alert.alert('Missing Code', 'Please enter your team discriminator code, e.g. STEMM-1234.');
+      return;
+    }
+
+    if (!cleanCode.startsWith('STEMM-')) {
+      Alert.alert('Invalid Code', 'Team codes start with STEMM- followed by 4 numbers, e.g. STEMM-1234.');
+      return;
+    }
 
     try {
       setIsRecording(false);
@@ -386,8 +350,13 @@ export default function ActivityTwoGame() {
         `Maximum sound: ${finalDb.toFixed(1)} dB\nRisk: ${soundRisk.label}`,
         [
           {
-            text: 'View Summary',
-            onPress: () => router.push(`/result-summary?resultId=${savedId}` as never),
+            text: 'Continue',
+            onPress: async () => {
+              // Ask for GPS permission after joining team
+              // Silent if denied — results save fine without location
+              await askForLocationAfterSetup();
+              router.replace('/(tabs)/home' as never);
+            },
           },
           { text: 'Stay Here', style: 'cancel' },
         ]
@@ -400,76 +369,40 @@ export default function ActivityTwoGame() {
     }
   };
 
-  const clearTest = () => {
-    Alert.alert(
-      'Clear Test?',
-      'This will clear the current sound test from this screen.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          onPress: () => {
-            setActionName(''); setLocationName(''); setPrediction('');
-            setWasCorrect(''); setSurprises(''); setEarMuffAnswer('');
-            setCurrentDb(0); setMaxDb(0);
-            setSavedResultId(null); setResults([]);
-            actionNameRef.current = ''; locationNameRef.current = '';
-            predictionRef.current = ''; wasCorrectRef.current = '';
-            surprisesRef.current = ''; earMuffAnswerRef.current = '';
-            currentDbRef.current = 0; maxDbRef.current = 0;
-            setActiveTab('activity');
-          },
-        },
-      ]
-    );
-  };
+  const renderTabs = () => (
+    <View style={[styles.tabRow, { borderBottomColor: colors.border }]}>
+      {([
+        { key: 'create', label: 'Create Team' },
+        { key: 'join', label: 'Join Team' },
+      ] as { key: TabKey; label: string }[]).map((tab) => {
+        const selected = activeTab === tab.key;
+        return (
+          <Pressable
+            key={tab.key}
+            onPress={() => {
+              setActiveTab(tab.key);
+              setFoundTeam(null);
+            }}
+            style={[
+              styles.tabButton,
+              {
+                borderBottomColor: selected ? colors.tint : 'transparent',
+                borderBottomWidth: 2,
+              },
+            ]}
+          >
+            <Text style={[styles.tabText, { color: selected ? colors.tint : colors.subtitle }]}>
+              {tab.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
 
-  useEffect(() => {
-    return () => {
-      if (recordingRef.current) {
-        void recordingRef.current.stopAndUnloadAsync();
-        recordingRef.current = null;
-      }
-      if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
-    };
-  }, []);
-
-  // ─── Tab renderer ─────────────────────────────────────────────
-  const renderTabs = () => {
-    const tabs: { key: TabKey; label: string }[] = [
-      { key: 'activity', label: 'Activity' },
-      { key: 'writeup', label: 'Write Up' },
-      { key: 'discussion', label: 'Discussion' },
-    ];
-
-    return (
-      <View style={[styles.bottomTabRow, { borderTopColor: colors.border }]}>
-        {tabs.map((tab) => {
-          const selected = activeTab === tab.key;
-          return (
-            <Pressable
-              key={tab.key}
-              onPress={() => setActiveTab(tab.key)}
-              style={({ pressed }) => [
-                styles.bottomTabButton,
-                { borderBottomColor: selected ? colors.tint : 'transparent' },
-                pressed && styles.buttonPressed,
-              ]}
-            >
-              <Text style={[styles.bottomTabText, { color: selected ? colors.tint : colors.subtitle }]}>
-                {tab.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-    );
-  };
-
-  // ─── Activity Tab ──────────────────────────────────────────────
-  const renderActivityTab = () => (
-    <View style={[styles.phoneLayoutCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+  const renderCreateTab = () => (
+    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <Text style={[styles.cardTitle, { color: colors.text }]}>Create Your Team</Text>
 
       <Text style={[styles.cardTitle, { color: colors.text }]}>Instructions</Text>
 
@@ -525,20 +458,9 @@ export default function ActivityTwoGame() {
         style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
       />
 
-      <View style={styles.draftRow}>
-        <Text
-          style={[
-            styles.draftStatus,
-            {
-              color: draftStatus === 'error'
-                ? colors.danger
-                : draftStatus === 'saved'
-                  ? colors.success
-                  : colors.subtitle,
-            },
-          ]}
-        >
-          {draftStatus === 'saved' ? 'Offline draft saved' : draftStatus === 'error' ? 'Draft save error' : 'Draft saves automatically'}
+      <View style={[styles.discriminatorBox, { borderColor: colors.tint, backgroundColor: `${colors.tint}10` }]}>
+        <Text style={[styles.discriminatorLabel, { color: colors.subtitle }]}>
+          Your Team Code — share this with your team
         </Text>
         {actionName.trim().length > 0 && (
           <Pressable onPress={clearDraft}>
@@ -617,10 +539,9 @@ export default function ActivityTwoGame() {
     </View>
   );
 
-  // ─── Write-up Tab ──────────────────────────────────────────────
-  const renderWriteUpTab = () => (
-    <View style={[styles.phoneLayoutCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <Text style={[styles.cardTitle, { color: colors.text }]}>Write Up</Text>
+  const renderJoinTab = () => (
+    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <Text style={[styles.cardTitle, { color: colors.text }]}>Join Existing Team</Text>
 
       <Text style={[styles.body, { color: colors.subtitle }]}>
         Predict which action creates the loudest sound. Then compare your prediction with the measured maximum dB.
@@ -703,42 +624,33 @@ export default function ActivityTwoGame() {
           },
         ]}
       >
-        {draftStatus === 'saved' ? '✓ Write-up draft saved automatically' : 'Write-up saves automatically'}
-      </Text>
+        {isSearching ? (
+          <ActivityIndicator color={colors.buttonText} />
+        ) : (
+          <Text style={[styles.buttonText, { color: colors.buttonText }]}>Find Team</Text>
+        )}
+      </Pressable>
 
-      {renderTabs()}
-    </View>
-  );
-
-  // ─── Discussion Tab ────────────────────────────────────────────
-  const renderDiscussionTab = () => (
-    <View style={[styles.phoneLayoutCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <Text style={[styles.cardTitle, { color: colors.text }]}>Discussion</Text>
-
-      <View style={[styles.discussionBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
-        <Text style={[styles.discussionHeading, { color: colors.text }]}>What Is Sound Pollution?</Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          Sound pollution is unwanted or harmful sound. Loud sounds can affect hearing, concentration, communication, and comfort. Prolonged exposure to loud noise can permanently damage hearing.
-        </Text>
-      </View>
-
-      <View style={[styles.discussionBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
-        <Text style={[styles.discussionHeading, { color: colors.text }]}>What the App Measures</Text>
-        <Text style={[styles.body, { color: colors.subtitle }]}>
-          The phone microphone estimates sound level in decibels (dB). The app records the maximum dB measured during the recording and compares it to known hearing risk thresholds.
-        </Text>
-      </View>
+      {foundTeam && (
+        <View style={[styles.foundTeamBox, { borderColor: colors.success, backgroundColor: `${colors.success}10` }]}>
+          <Text style={[styles.foundTeamTitle, { color: colors.success }]}>✓ Team Found</Text>
+          <Text style={[styles.foundTeamName, { color: colors.text }]}>{foundTeam.teamName}</Text>
+          <Text style={[styles.body, { color: colors.subtitle }]}>Grade: {foundTeam.gradeLevel}</Text>
+          <Text style={[styles.body, { color: colors.subtitle }]}>Members: {foundTeam.memberNames.join(', ')}</Text>
+          <Text style={[styles.body, { color: colors.subtitle }]}>Code: {foundTeam.teamDiscriminator}</Text>
 
       <Text style={[styles.label, { color: colors.text }]}>Hearing Risk Table</Text>
 
-      {RISK_TABLE.map((row) => (
-        <View
-          key={row.range}
-          style={[styles.riskRow, { backgroundColor: colors.background, borderColor: colors.border }]}
-        >
-          <Text style={[styles.riskRange, { color: colors.text }]}>{row.range}</Text>
-          <Text style={[styles.body, { color: colors.subtitle }]}>{row.example}</Text>
-          <Text style={[styles.body, { color: colors.subtitle }]}>{row.risk}</Text>
+          <Pressable
+            onPress={() => setFoundTeam(null)}
+            style={({ pressed }) => [
+              styles.secondaryButton,
+              { borderColor: colors.border },
+              pressed && styles.buttonPressed,
+            ]}
+          >
+            <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Search Again</Text>
+          </Pressable>
         </View>
       ))}
 
@@ -801,125 +713,25 @@ const styles = StyleSheet.create({
   header: { marginBottom: 20 },
   title: { fontSize: 32, fontWeight: '900' },
   subtitle: { marginTop: 8, fontSize: 16, lineHeight: 22 },
-  phoneLayoutCard: {
-    borderWidth: 2,
-    borderRadius: 24,
-    padding: 18,
-    marginBottom: 16,
-    minHeight: 620,
-  },
-  cardTitle: { fontSize: 20, fontWeight: '900', marginBottom: 12 },
-  label: { fontSize: 15, fontWeight: '800', marginBottom: 8, marginTop: 4 },
+  tabRow: { flexDirection: 'row', borderBottomWidth: 1, marginBottom: 20 },
+  tabButton: { flex: 1, paddingVertical: 14, alignItems: 'center' },
+  tabText: { fontSize: 15, fontWeight: '800' },
+  card: { borderWidth: 1, borderRadius: 22, padding: 18, marginBottom: 16 },
+  cardTitle: { fontSize: 20, fontWeight: '900', marginBottom: 10 },
   body: { fontSize: 15, lineHeight: 22 },
-  warningBox: {
-    borderWidth: 2,
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 12,
-  },
-  warningText: { fontSize: 14, fontWeight: '800', lineHeight: 20 },
-  instructionBox: {
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 16,
-    gap: 6,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 14,
-    fontSize: 15,
-    marginBottom: 8,
-  },
-  multilineInput: { minHeight: 80, textAlignVertical: 'top' },
-  draftRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 16,
-  },
-  draftStatus: { flex: 1, fontSize: 13, fontWeight: '700' },
-  clearDraftText: { fontSize: 13, fontWeight: '900' },
-  meterBox: {
-    borderWidth: 1,
-    borderRadius: 18,
-    padding: 18,
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  meterLabel: { fontSize: 14, fontWeight: '700' },
-  meterValue: { marginTop: 6, fontSize: 42, fontWeight: '900' },
-  button: {
-    minHeight: 56,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  secondaryButton: {
-    marginTop: 12,
-    minHeight: 52,
-    borderRadius: 18,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  clearButton: {
-    marginTop: 14,
-    minHeight: 48,
-    borderRadius: 16,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  input: { borderWidth: 1, borderRadius: 14, padding: 14, fontSize: 15, marginBottom: 12 },
+  instructionBox: { borderWidth: 1, borderRadius: 14, padding: 14, marginBottom: 14, gap: 6 },
+  discriminatorBox: { borderWidth: 2, borderRadius: 16, padding: 14, marginBottom: 14 },
+  discriminatorLabel: { fontSize: 13, fontWeight: '700', marginBottom: 4 },
+  discriminatorValue: { fontSize: 24, fontWeight: '900', marginBottom: 6 },
+  helperText: { fontSize: 13, lineHeight: 18, marginBottom: 12 },
+  button: { minHeight: 56, borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginTop: 4 },
+  joinButton: { minHeight: 52, borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginTop: 14 },
+  secondaryButton: { minHeight: 48, borderRadius: 16, borderWidth: 1, justifyContent: 'center', alignItems: 'center', marginTop: 10 },
   buttonPressed: { transform: [{ scale: 0.98 }], opacity: 0.85 },
   buttonText: { fontSize: 16, fontWeight: '900' },
   secondaryButtonText: { fontSize: 15, fontWeight: '900' },
-  savedText: { fontSize: 15, fontWeight: '900', textAlign: 'center', marginTop: 12 },
-  resultsBox: { borderTopWidth: 1, paddingTop: 14, marginTop: 14 },
-  resultBox: { borderTopWidth: 1, paddingTop: 12, marginTop: 14 },
-  resultRow: { borderTopWidth: 1, paddingTop: 12, marginTop: 12 },
-  resultTitle: { fontSize: 16, fontWeight: '900', marginBottom: 4 },
-  score: { marginTop: 4, fontSize: 15, fontWeight: '900' },
-  tableBox: {
-    borderWidth: 1,
-    borderRadius: 14,
-    marginTop: 14,
-    marginBottom: 14,
-    overflow: 'hidden',
-  },
-  tableRow: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-  },
-  tableHeader: { fontSize: 13, fontWeight: '900' },
-  tableCell: { fontSize: 13, fontWeight: '600' },
-  discussionBox: {
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 12,
-    gap: 6,
-  },
-  discussionHeading: { fontSize: 16, fontWeight: '900', marginBottom: 6 },
-  riskRow: {
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 10,
-  },
-  riskRange: { fontSize: 15, fontWeight: '900', marginBottom: 4 },
-  bottomTabRow: {
-    marginTop: 'auto',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    borderTopWidth: 1,
-    paddingTop: 12,
-    gap: 4,
-  },
-  bottomTabButton: { paddingHorizontal: 6, paddingBottom: 4, borderBottomWidth: 2 },
-  bottomTabText: { fontSize: 13, fontWeight: '700' },
+  foundTeamBox: { borderWidth: 2, borderRadius: 18, padding: 16, marginTop: 16 },
+  foundTeamTitle: { fontSize: 16, fontWeight: '900', marginBottom: 8 },
+  foundTeamName: { fontSize: 22, fontWeight: '900', marginBottom: 6 },
 });

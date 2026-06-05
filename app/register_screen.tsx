@@ -4,47 +4,27 @@ import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
 
+import { useAppTheme } from '@/contexts/AppThemeContext';
 import { registerUser } from '../services/authService';
-
-function validatePassword(password: string) {
-  if (password.length < 8) {
-    return 'Password must be at least 8 characters long.';
-  }
-
-  if (!/[A-Z]/.test(password)) {
-    return 'Password must include at least one capital letter.';
-  }
-
-  if (!/[a-z]/.test(password)) {
-    return 'Password must include at least one lowercase letter.';
-  }
-
-  if (!/[0-9]/.test(password)) {
-    return 'Password must include at least one number.';
-  }
-
-  if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
-    return 'Password must include at least one special character.';
-  }
-
-  return '';
-}
 
 function getRegisterErrorMessage(errorCode: string, fallbackMessage: string) {
   switch (errorCode) {
-    case 'auth/email-already-in-use':
-      return 'This email is already registered. Please login instead.';
     case 'auth/invalid-email':
       return 'Please enter a valid email address.';
+    case 'auth/email-already-in-use':
+      return 'An account with this email already exists. Please login instead.';
     case 'auth/weak-password':
-      return 'Password is too weak. Please use a stronger password.';
+      return 'Password is too weak. Please use at least 6 characters.';
     case 'auth/network-request-failed':
       return 'Network error. Please check your internet connection.';
     default:
@@ -57,143 +37,216 @@ export default function RegisterScreen() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleRegister = async () => {
     const cleanEmail = email.trim();
 
-    if (!cleanEmail || !password) {
-      Alert.alert('Missing details', 'Please enter email and password.');
+    if (!cleanEmail || !password || !confirmPassword) {
+      Alert.alert('Missing Details', 'Please fill in all fields.');
       return;
     }
 
-    const passwordError = validatePassword(password);
+    if (password !== confirmPassword) {
+      Alert.alert('Passwords Do Not Match', 'Please make sure both passwords are the same.');
+      return;
+    }
 
-    if (passwordError) {
-      Alert.alert('Weak password', passwordError);
+    if (password.length < 6) {
+      Alert.alert('Weak Password', 'Password must be at least 6 characters.');
       return;
     }
 
     try {
+      setIsLoading(true);
       await registerUser(cleanEmail, password);
-
-      Alert.alert('Success', 'Account created successfully.');
-      router.replace('/team_setup');
+      Alert.alert(
+        'Account Created',
+        'Your account has been created successfully.',
+        [
+          {
+            text: 'Continue',
+            onPress: () => router.replace('/team_setup'),
+          },
+        ]
+      );
     } catch (error: any) {
       const message = getRegisterErrorMessage(error.code, error.message);
-      Alert.alert('Registration failed', message);
+      Alert.alert('Registration Failed', message);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
-    <AppScreen>
-      <View
-        style={[
-          styles.card,
-          { backgroundColor: colors.card, borderColor: colors.border },
-        ]}
+    <KeyboardAvoidingView
+      style={[styles.flex, { backgroundColor: colors.background }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <ScrollView
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
       >
-        <Text style={[styles.title, { color: colors.text }]}>STEMM Lab</Text>
+        {/* Header */}
+        <View style={styles.headerSection}>
+          <Text style={[styles.title, { color: colors.text }]}>STEMM Lab</Text>
+          <Text style={[styles.subtitle, { color: colors.subtitle }]}>
+            Create your account
+          </Text>
+        </View>
 
-        <Text style={[styles.subtitle, { color: colors.subtitle }]}>
-          Create an account to continue
-        </Text>
-
-        <TextInput
+        {/* Card */}
+        <View
           style={[
-            styles.input,
-            {
-              color: colors.text,
-              borderColor: colors.border,
-              backgroundColor: colors.background,
-            },
+            styles.card,
+            { backgroundColor: colors.card, borderColor: colors.border },
           ]}
-          placeholder="Email"
-          placeholderTextColor={colors.subtitle}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          value={email}
-          onChangeText={setEmail}
-        />
-
-        <TextInput
-          style={[
-            styles.input,
-            {
-              color: colors.text,
-              borderColor: colors.border,
-              backgroundColor: colors.background,
-            },
-          ]}
-          placeholder="Password"
-          placeholderTextColor={colors.subtitle}
-          secureTextEntry
-          value={password}
-          onChangeText={setPassword}
-        />
-
-        <Text style={[styles.passwordHint, { color: colors.subtitle }]}>
-          Password must include 8+ characters, one capital letter, one lowercase
-          letter, one number, and one special character.
-        </Text>
-
-        <Pressable
-          style={({ pressed }) => [
-            styles.button,
-            { backgroundColor: colors.tint },
-            pressed && styles.buttonPressed,
-          ]}
-          onPress={handleRegister}
         >
-          <Text style={[styles.buttonText, { color: colors.buttonText }]}>
+          <Text style={[styles.cardTitle, { color: colors.text }]}>
             Register
           </Text>
-        </Pressable>
 
-        <Pressable onPress={() => router.push('/login_screen')}>
-          <Text style={[styles.link, { color: colors.tint }]}>
-            Already have an account? Login
+          <Text style={[styles.helperText, { color: colors.subtitle }]}>
+            Create an account to save your team and activity results.
+          </Text>
+
+          <TextInput
+            style={[
+              styles.input,
+              {
+                color: colors.text,
+                borderColor: colors.border,
+                backgroundColor: colors.background,
+              },
+            ]}
+            placeholder="Email address"
+            placeholderTextColor={colors.subtitle}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            value={email}
+            onChangeText={setEmail}
+          />
+
+          <TextInput
+            style={[
+              styles.input,
+              {
+                color: colors.text,
+                borderColor: colors.border,
+                backgroundColor: colors.background,
+              },
+            ]}
+            placeholder="Password (min 6 characters)"
+            placeholderTextColor={colors.subtitle}
+            secureTextEntry
+            value={password}
+            onChangeText={setPassword}
+          />
+
+          <TextInput
+            style={[
+              styles.input,
+              {
+                color: colors.text,
+                borderColor: colors.border,
+                backgroundColor: colors.background,
+              },
+            ]}
+            placeholder="Confirm password"
+            placeholderTextColor={colors.subtitle}
+            secureTextEntry
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+          />
+
+          <Pressable
+            onPress={handleRegister}
+            disabled={isLoading}
+            style={({ pressed }) => [
+              styles.button,
+              { backgroundColor: isLoading ? colors.subtitle : colors.tint },
+              pressed && styles.buttonPressed,
+            ]}
+          >
+            <Text style={[styles.buttonText, { color: colors.buttonText }]}>
+              {isLoading ? 'Creating Account...' : 'Create Account'}
+            </Text>
+          </Pressable>
+        </View>
+
+        {/* Login link */}
+        <Pressable
+          onPress={() => router.replace('/login_screen')}
+          style={({ pressed }) => [pressed && styles.buttonPressed]}
+        >
+          <Text style={[styles.loginLink, { color: colors.subtitle }]}>
+            Already have an account?{' '}
+            <Text style={{ color: colors.tint, fontWeight: '900' }}>
+              Sign In
+            </Text>
           </Text>
         </Pressable>
-      </View>
-    </AppScreen>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    borderWidth: 1,
-    borderRadius: 24,
+  flex: { flex: 1 },
+  container: {
+    flexGrow: 1,
     padding: 24,
-    marginTop: 40,
+    justifyContent: 'center',
+  },
+  headerSection: {
+    alignItems: 'center',
+    marginBottom: 32,
   },
   title: {
-    fontSize: 36,
-    fontWeight: '800',
-    textAlign: 'center',
+    fontSize: 38,
+    fontWeight: '900',
+    letterSpacing: -1,
   },
   subtitle: {
     fontSize: 16,
-    textAlign: 'center',
-    marginTop: 8,
-    marginBottom: 28,
+    marginTop: 6,
+    fontWeight: '600',
+  },
+  card: {
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: 22,
+    marginBottom: 24,
+  },
+  cardTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+    marginBottom: 6,
+  },
+  helperText: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 18,
   },
   input: {
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 14,
     marginBottom: 14,
     fontSize: 16,
   },
-  passwordHint: {
-    fontSize: 12,
-    lineHeight: 18,
-    marginBottom: 14,
-  },
   button: {
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 4,
+    minHeight: 54,
+    justifyContent: 'center',
+  },
+  buttonPressed: {
+    transform: [{ scale: 0.98 }],
+    opacity: 0.85,
   },
   buttonPressed: {
     transform: [{ scale: 0.98 }],
@@ -201,11 +254,11 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '900',
   },
-  link: {
+  loginLink: {
     textAlign: 'center',
-    fontWeight: '700',
-    marginTop: 18,
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

@@ -1,6 +1,7 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { Alert, Linking } from 'react-native';
+
+import { secureDelete, secureGet, secureSet } from '@/utils/secureStorage';
 
 // ─── Keys ─────────────────────────────────────────────────────
 const LOCATION_GRANTED_KEY = 'stemm_location_granted';
@@ -9,7 +10,7 @@ const LOCATION_DENY_COUNT_KEY = 'stemm_location_deny_count';
 // ─── Deny count helpers ───────────────────────────────────────
 async function getDenyCount(): Promise<number> {
   try {
-    const value = await AsyncStorage.getItem(LOCATION_DENY_COUNT_KEY);
+    const value = await secureGet(LOCATION_DENY_COUNT_KEY);
     return value ? parseInt(value, 10) : 0;
   } catch { return 0; }
 }
@@ -17,25 +18,25 @@ async function getDenyCount(): Promise<number> {
 async function incrementDenyCount(): Promise<void> {
   try {
     const current = await getDenyCount();
-    await AsyncStorage.setItem(LOCATION_DENY_COUNT_KEY, String(current + 1));
+    await secureSet(LOCATION_DENY_COUNT_KEY, String(current + 1));
   } catch {}
 }
 
 async function resetDenyCount(): Promise<void> {
-  try { await AsyncStorage.removeItem(LOCATION_DENY_COUNT_KEY); } catch {}
+  try { await secureDelete(LOCATION_DENY_COUNT_KEY); } catch {}
 }
 
 // ─── Permission state ─────────────────────────────────────────
 export async function isLocationPermissionGranted(): Promise<boolean> {
   try {
-    const value = await AsyncStorage.getItem(LOCATION_GRANTED_KEY);
+    const value = await secureGet(LOCATION_GRANTED_KEY);
     return value === 'true';
   } catch { return false; }
 }
 
 async function setLocationPermissionGranted(granted: boolean): Promise<void> {
   try {
-    await AsyncStorage.setItem(LOCATION_GRANTED_KEY, granted ? 'true' : 'false');
+    await secureSet(LOCATION_GRANTED_KEY, granted ? 'true' : 'false');
   } catch {}
 }
 
@@ -101,8 +102,9 @@ export type LocationTag = {
   address: string | null;
 };
 
-// Call this when saving an activity result via saveAttempt
-// Returns null silently if permission not granted
+// Call this when saving an activity result.
+// Returns null silently if permission is not granted
+// so the result still saves — just without location.
 export async function getCurrentLocationTag(): Promise<LocationTag | null> {
   try {
     const granted = await isLocationPermissionGranted();

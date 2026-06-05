@@ -9,7 +9,8 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.stemmlab.assignment4mad"
     },
     "android": {
       "adaptiveIcon": {
@@ -19,7 +20,9 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.stemmlab.assignment4mad",
+      "versionCode": 1
     },
     "web": {
       "output": "static",
@@ -39,13 +42,29 @@
           }
         }
       ],
-  
-  "expo-font",
-  "expo-web-browser",
-  "expo-sqlite"
-  
-],
-  "experiments": {
+      "expo-font",
+      "expo-web-browser",
+      "expo-sqlite",
+      "expo-task-manager",
+      "expo-background-fetch",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow STEMM Lab to save experiment videos and photos to your gallery.",
+          "savePhotosPermission": "Allow STEMM Lab to save experiment videos and photos to your gallery.",
+          "isAccessMediaLocationEnabled": true
+        }
+      ],
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-2966645425515948~1669630883",
+          "iosAppId": "ca-app-pub-3940256099942544~1458002511"
+        }
+      ],
+      "expo-secure-store"
+    ],
+    "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     }
