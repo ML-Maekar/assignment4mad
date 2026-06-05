@@ -475,7 +475,7 @@ export default function ActivityThreeGame() {
 
       {/* Camera permission warning */}
       {!cameraGranted && (
-        <View style={[styles.warningBox, { backgroundColor: `${colors.danger}18`, borderColor: colors.danger }]}>
+        <View style={[styles.warningBanner, { backgroundColor: `${colors.danger}15`, borderColor: colors.danger }]}>
           <Text style={[styles.warningText, { color: colors.danger }]}>
             ⚠️ Camera permission is off. Enable it in Settings to take photos or record video.
           </Text>
