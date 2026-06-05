@@ -16,8 +16,6 @@ import { usePermissions } from '@/contexts/PermissionsContext';
 import { saveAttempt } from '@/services/attemptService';
 import { scheduleActivityCompleteNotification } from '@/utils/notifications';
 
-const SOUND_DEMO_IMAGE = require('../assets/images/activity 2.png');
-
 type TabKey = 'activity' | 'writeup' | 'discussion';
 
 type SoundResult = {
@@ -31,15 +29,6 @@ type SoundResult = {
   wasCorrect: string;
 };
 
-type ActivityTwoDraftData = {
-  actionName?: string;
-  locationName?: string;
-  prediction?: string;
-  wasCorrect?: string;
-  surprises?: string;
-  earMuffAnswer?: string;
-};
-
 type SoundRisk = {
   label: string;
   example: string;
@@ -48,19 +37,6 @@ type SoundRisk = {
 
 const ACTIVITY_KEY = 'activity-two';
 const ACTIVITY_TITLE = 'Sound Pollution Hunter';
-const DRAFT_KEY = 'activity-two-sound-draft';
-
-const RISK_TABLE = [
-  { range: '0–30 dB', example: 'Whisper, quiet library', risk: 'No risk' },
-  { range: '30–60 dB', example: 'Normal conversation, classroom noise', risk: 'Safe for long periods' },
-  { range: '60–85 dB', example: 'Busy traffic, vacuum cleaner', risk: 'Generally safe, but long exposure can cause fatigue' },
-  { range: '85–90 dB', example: 'Lawn mower, loud classroom, heavy traffic', risk: 'Hearing damage possible after long exposure' },
-  { range: '90–100 dB', example: 'Motorbike, power tools, loud music', risk: 'Hearing damage likely after short exposure' },
-  { range: '100–110 dB', example: 'Nightclub, rock concert, chainsaw', risk: 'Serious hearing damage in minutes' },
-  { range: '110–120 dB', example: 'Siren close by, car horn at 1 m', risk: 'Painful; immediate damage possible' },
-  { range: '120–130 dB', example: 'Jet engine close', risk: 'Immediate and severe hearing damage' },
-  { range: '140+ dB', example: 'Explosion, gunshot', risk: 'Instant, permanent hearing damage' },
-];
 
 function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(Math.max(value, minimum), maximum);
@@ -106,6 +82,14 @@ export default function ActivityTwoGame() {
   const { micGranted } = usePermissions();
 
   const recordingRef = useRef<Audio.Recording | null>(null);
+  const actionNameRef = useRef('');
+  const locationNameRef = useRef('');
+  const predictionRef = useRef('');
+  const wasCorrectRef = useRef('');
+  const surprisesRef = useRef('');
+  const earMuffAnswerRef = useRef('');
+  const currentDbRef = useRef(0);
+  const maxDbRef = useRef(0);
 
   const [activeTab, setActiveTab] = useState<TabKey>('activity');
   const [hasSystemPermission, setHasSystemPermission] = useState(false);
@@ -123,10 +107,17 @@ export default function ActivityTwoGame() {
   const [maxDb, setMaxDb] = useState(0);
   const [results, setResults] = useState<SoundResult[]>([]);
   const [savedResultId, setSavedResultId] = useState<number | null>(null);
-  const [lastResult, setLastResult] = useState<Result | null>(null);
-  const [sessionResults, setSessionResults] = useState<Result[]>([]);
 
-  // Load system-level mic permission on mount
+  const displayedRisk = maxDb > 0 ? getSoundRisk(maxDb) : null;
+
+  // Keep refs in sync with state for use inside callbacks
+  useEffect(() => { actionNameRef.current = actionName; }, [actionName]);
+  useEffect(() => { locationNameRef.current = locationName; }, [locationName]);
+  useEffect(() => { predictionRef.current = prediction; }, [prediction]);
+  useEffect(() => { wasCorrectRef.current = wasCorrect; }, [wasCorrect]);
+  useEffect(() => { surprisesRef.current = surprises; }, [surprises]);
+  useEffect(() => { earMuffAnswerRef.current = earMuffAnswer; }, [earMuffAnswer]);
+
   useEffect(() => {
     async function checkSystemPermission() {
       const permission = await Audio.requestPermissionsAsync();
@@ -135,8 +126,16 @@ export default function ActivityTwoGame() {
     checkSystemPermission();
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (recordingRef.current) {
+        void recordingRef.current.stopAndUnloadAsync();
+        recordingRef.current = null;
+      }
+    };
+  }, []);
+
   const startRecording = async () => {
-    // Check app-level permission from Settings first
     if (!micGranted) {
       Alert.alert(
         'Microphone Disabled',
@@ -145,7 +144,6 @@ export default function ActivityTwoGame() {
       return;
     }
 
-    // Check system-level permission
     if (!hasSystemPermission) {
       const permission = await Audio.requestPermissionsAsync();
       setHasSystemPermission(permission.granted);
@@ -159,13 +157,13 @@ export default function ActivityTwoGame() {
       Alert.alert('Missing Action', 'Please enter the action or object tested.');
       return;
     }
-    if (!location.trim()) {
+    if (!locationName.trim()) {
       Alert.alert('Missing Location', 'Please enter where the sound was measured.');
       return;
     }
 
     try {
-      setCurrentDb(null);
+      setCurrentDb(0);
       setMaxDb(0);
       currentDbRef.current = 0;
       maxDbRef.current = 0;
@@ -246,9 +244,6 @@ export default function ActivityTwoGame() {
         },
       });
 
-      await deleteOfflineDraftByKey(DRAFT_KEY);
-      setDraftStatus('idle');
-
       const newResult: SoundResult = {
         id: savedId,
         actionName: finalActionName,
@@ -262,8 +257,6 @@ export default function ActivityTwoGame() {
 
       setResults((current) => [newResult, ...current]);
       setSavedResultId(savedId);
-
-      void scheduleActivityCompleteNotification(ACTIVITY_TITLE, finalDb);
 
       await scheduleActivityCompleteNotification(ACTIVITY_TITLE, finalDb);
 
@@ -296,30 +289,30 @@ export default function ActivityTwoGame() {
           text: 'Clear',
           style: 'destructive',
           onPress: () => {
-            setActionName(''); setLocationName(''); setPrediction('');
-            setWasCorrect(''); setSurprises(''); setEarMuffAnswer('');
-            setCurrentDb(0); setMaxDb(0);
-            setSavedResultId(null); setResults([]);
-            actionNameRef.current = ''; locationNameRef.current = '';
-            predictionRef.current = ''; wasCorrectRef.current = '';
-            surprisesRef.current = ''; earMuffAnswerRef.current = '';
-            currentDbRef.current = 0; maxDbRef.current = 0;
+            setActionName('');
+            setLocationName('');
+            setPrediction('');
+            setWasCorrect('');
+            setSurprises('');
+            setEarMuffAnswer('');
+            setCurrentDb(0);
+            setMaxDb(0);
+            setSavedResultId(null);
+            setResults([]);
+            actionNameRef.current = '';
+            locationNameRef.current = '';
+            predictionRef.current = '';
+            wasCorrectRef.current = '';
+            surprisesRef.current = '';
+            earMuffAnswerRef.current = '';
+            currentDbRef.current = 0;
+            maxDbRef.current = 0;
             setActiveTab('activity');
           },
         },
       ]
     );
   };
-
-  useEffect(() => {
-    return () => {
-      if (recordingRef.current) {
-        void recordingRef.current.stopAndUnloadAsync();
-        recordingRef.current = null;
-      }
-      if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
-    };
-  }, []);
 
   const renderTabs = () => {
     const tabs: { key: TabKey; label: string }[] = [
@@ -355,7 +348,6 @@ export default function ActivityTwoGame() {
   const renderActivityTab = () => (
     <View style={[styles.phoneLayoutCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
 
-      {/* Mic permission warning banner */}
       {!micGranted && (
         <View style={[styles.warningBanner, { backgroundColor: `${colors.danger}15`, borderColor: colors.danger }]}>
           <Text style={[styles.warningText, { color: colors.danger }]}>
@@ -374,15 +366,6 @@ export default function ActivityTwoGame() {
         <Text style={[styles.body, { color: colors.subtitle }]}>5. Compare sounds — which was louder or softer than expected?</Text>
         <Text style={[styles.body, { color: colors.subtitle }]}>6. Rotate for each team member.</Text>
       </View>
-
-      {/* Microphone permission warning */}
-      {!micGranted && (
-        <View style={[styles.warningBox, { backgroundColor: `${colors.danger}18`, borderColor: colors.danger }]}>
-          <Text style={[styles.warningText, { color: colors.danger }]}>
-            ⚠️ Microphone permission is off. Enable it in Settings to record sound.
-          </Text>
-        </View>
-      )}
 
       <Text style={[styles.label, { color: colors.text }]}>Sound Action</Text>
 
@@ -405,28 +388,6 @@ export default function ActivityTwoGame() {
         editable={!isRecording && savedResultId === null}
         style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
       />
-
-      <View style={styles.draftRow}>
-        <Text
-          style={[
-            styles.draftStatus,
-            {
-              color: draftStatus === 'error'
-                ? colors.danger
-                : draftStatus === 'saved'
-                  ? colors.success
-                  : colors.subtitle,
-            },
-          ]}
-        >
-          {draftStatus === 'saved' ? 'Offline draft saved' : draftStatus === 'error' ? 'Draft save error' : 'Draft saves automatically'}
-        </Text>
-        {actionName.trim().length > 0 && (
-          <Pressable onPress={clearDraft}>
-            <Text style={[styles.clearDraftText, { color: colors.danger }]}>Clear Draft</Text>
-          </Pressable>
-        )}
-      </View>
 
       <View style={[styles.meterBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
         <Text style={[styles.meterLabel, { color: colors.subtitle }]}>Current Sound Level</Text>
@@ -490,7 +451,7 @@ export default function ActivityTwoGame() {
         </View>
       )}
 
-      {sessionResults.length > 0 && (
+      {results.length > 0 && (
         <View style={[styles.resultsBox, { borderColor: colors.border }]}>
           <Text style={[styles.cardTitle, { color: colors.text }]}>Session Results</Text>
           {results.map((result) => (
@@ -502,14 +463,7 @@ export default function ActivityTwoGame() {
               </Text>
               <Text style={[styles.body, { color: colors.subtitle }]}>Risk: {result.hearingRisk}</Text>
             </View>
-            {sessionResults.map((r) => (
-              <View key={r.id} style={[styles.tableRow, { borderColor: colors.border }]}>
-                <Text style={[styles.tableCell, { color: colors.text, flex: 2 }]} numberOfLines={2}>{r.actionName}</Text>
-                <Text style={[styles.tableCell, { color: colors.success, flex: 1 }]}>{r.maxDb.toFixed(1)}</Text>
-                <Text style={[styles.tableCell, { color: colors.subtitle, flex: 2 }]} numberOfLines={2}>{r.risk}</Text>
-              </View>
-            ))}
-          </View>
+          ))}
         </View>
       )}
 
@@ -544,20 +498,20 @@ export default function ActivityTwoGame() {
           <Text style={[styles.tableHeader, { color: colors.text, flex: 1 }]}>dB Level</Text>
           <Text style={[styles.tableHeader, { color: colors.text, flex: 1 }]}>Risk</Text>
         </View>
-        {sessionResults.length === 0 ? (
+        {results.length === 0 ? (
           <Text style={[styles.body, { color: colors.subtitle, padding: 10 }]}>
             Record sounds in the Activity tab to see results here.
           </Text>
         ) : (
-          sessionResults.map((r) => (
+          results.map((r) => (
             <View key={r.id} style={[styles.tableRow, { borderColor: colors.border }]}>
               <Text style={[styles.tableCell, { color: colors.text, flex: 2 }]} numberOfLines={2}>{r.actionName}</Text>
-              <Text style={[styles.tableCell, { color: colors.success, flex: 1 }]}>{r.maxDb.toFixed(1)}</Text>
-              <Text style={[styles.tableCell, { color: colors.subtitle, flex: 1 }]} numberOfLines={2}>{r.range}</Text>
+              <Text style={[styles.tableCell, { color: colors.success, flex: 1 }]}>{r.maximumSoundDb.toFixed(1)}</Text>
+              <Text style={[styles.tableCell, { color: colors.subtitle, flex: 1 }]} numberOfLines={2}>{r.hearingRisk}</Text>
             </View>
-          ))}
-        </View>
-      )}
+          ))
+        )}
+      </View>
 
       <Text style={[styles.label, { color: colors.text }]}>Were you right?</Text>
 
@@ -591,18 +545,6 @@ export default function ActivityTwoGame() {
         multiline
         style={[styles.input, styles.multilineInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
       />
-
-      <Text
-        style={[
-          styles.draftStatus,
-          {
-            color: draftStatus === 'saved' ? colors.success : colors.subtitle,
-            marginBottom: 8,
-          },
-        ]}
-      >
-        {draftStatus === 'saved' ? '✓ Write-up draft saved automatically' : 'Write-up saves automatically'}
-      </Text>
 
       {renderTabs()}
     </View>
@@ -644,7 +586,7 @@ export default function ActivityTwoGame() {
             </View>
           ))}
         </View>
-      ))}
+      </View>
 
       <View style={[styles.discussionBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
         <Text style={[styles.discussionHeading, { color: colors.text }]}>Think About This</Text>
@@ -676,7 +618,7 @@ export default function ActivityTwoGame() {
 
       <Pressable
         onPress={clearTest}
-        style={({ pressed }) => [styles.clearButton, { borderColor: colors.danger }, pressed && styles.buttonPressed]}
+        style={({ pressed }) => [styles.secondaryButton, { borderColor: colors.danger }, pressed && styles.buttonPressed]}
       >
         <Text style={[styles.secondaryButtonText, { color: colors.danger }]}>Clear Test</Text>
       </Pressable>
@@ -712,7 +654,6 @@ const styles = StyleSheet.create({
   warningBanner: { borderWidth: 1, borderRadius: 14, padding: 12, marginBottom: 14 },
   warningText: { fontSize: 14, fontWeight: '700', lineHeight: 20 },
   instructionBox: { borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 16, gap: 6 },
-  demoImage: { width: '100%', height: 260, marginBottom: 18 },
   bottomTabRow: { marginTop: 'auto', flexDirection: 'row', justifyContent: 'center', borderTopWidth: 1, paddingTop: 12, gap: 4 },
   bottomTabButton: { paddingHorizontal: 6, paddingBottom: 4, borderBottomWidth: 2 },
   bottomTabText: { fontSize: 13, fontWeight: '700' },
@@ -720,7 +661,7 @@ const styles = StyleSheet.create({
   multilineInput: { minHeight: 80, textAlignVertical: 'top' },
   meterBox: { borderWidth: 1, borderRadius: 18, padding: 16, marginBottom: 14 },
   meterLabel: { fontSize: 13, fontWeight: '700', marginBottom: 6 },
-  dbText: { fontSize: 42, fontWeight: '900', marginBottom: 8 },
+  meterValue: { fontSize: 42, fontWeight: '900', marginBottom: 8 },
   tableBox: { borderWidth: 1, borderRadius: 14, marginBottom: 14, overflow: 'hidden' },
   tableRow: { flexDirection: 'row', borderBottomWidth: 1, paddingHorizontal: 10, paddingVertical: 10 },
   tableHeader: { fontSize: 13, fontWeight: '900' },
@@ -738,24 +679,6 @@ const styles = StyleSheet.create({
   resultRow: { borderTopWidth: 1, paddingTop: 12, marginTop: 12 },
   resultTitle: { fontSize: 16, fontWeight: '900', marginBottom: 4 },
   score: { marginTop: 4, fontSize: 15, fontWeight: '900' },
-  resultsBox: { borderTopWidth: 1, paddingTop: 14, marginTop: 14 },
-  discussionBox: { borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 12, gap: 6 },
+  discussionBox: { borderWidth: 1, borderRadius: 16, padding:14, marginBottom: 12, gap: 6 },
   discussionHeading: { fontSize: 16, fontWeight: '900', marginBottom: 6 },
-  riskRow: {
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 10,
-  },
-  riskRange: { fontSize: 15, fontWeight: '900', marginBottom: 4 },
-  bottomTabRow: {
-    marginTop: 'auto',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    borderTopWidth: 1,
-    paddingTop: 12,
-    gap: 4,
-  },
-  bottomTabButton: { paddingHorizontal: 6, paddingBottom: 4, borderBottomWidth: 2 },
-  bottomTabText: { fontSize: 13, fontWeight: '700' },
 });
