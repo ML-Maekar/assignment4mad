@@ -1,8 +1,8 @@
 import * as Notifications from 'expo-notifications';
 import {
-    cancelAllScheduledNotifications,
-    getNotificationPermissionStatus,
-    isNotificationPermissionGranted,
+  cancelAllScheduledNotifications,
+  getNotificationPermissionStatus,
+  isNotificationPermissionGranted,
 } from '../../utils/notifications';
 
 jest.mock('expo-notifications', () => ({

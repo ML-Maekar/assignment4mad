@@ -32,14 +32,10 @@ export function getStudentLevelFromGrade(gradeLevel: string) {
  
   if (
     grade.includes('primary') ||
-    grade.includes('grade 1') ||
-    grade.includes('grade 2') ||
     grade.includes('grade 3') ||
     grade.includes('grade 4') ||
     grade.includes('grade 5') ||
     grade.includes('grade 6') ||
-    grade.includes('year 1') ||
-    grade.includes('year 2') ||
     grade.includes('year 3') ||
     grade.includes('year 4') ||
     grade.includes('year 5') ||
