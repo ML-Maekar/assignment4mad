@@ -473,15 +473,6 @@ export default function ActivityThreeGame() {
         Stand paper or cardboard upright on the table. Fan air from 15 cm, 30 cm, or 45 cm away and record the movement.
       </Text>
 
-      {/* Camera permission warning */}
-      {!cameraGranted && (
-        <View style={[styles.warningBox, { backgroundColor: `${colors.danger}18`, borderColor: colors.danger }]}>
-          <Text style={[styles.warningText, { color: colors.danger }]}>
-            ⚠️ Camera permission is off. Enable it in Settings to take photos or record video.
-          </Text>
-        </View>
-      )}
-
       {/* Photo capture */}
       <View style={styles.mediaButtonRow}>
         <Pressable

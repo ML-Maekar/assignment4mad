@@ -1,4 +1,3 @@
-import AppScreen from '@/components/AppScreen';
 import { useAppTheme } from '@/contexts/AppThemeContext';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
@@ -14,7 +13,6 @@ import {
   View,
 } from 'react-native';
 
-import { useAppTheme } from '@/contexts/AppThemeContext';
 import { loginUser, resetPassword } from '../services/authService';
 
 function getLoginErrorMessage(errorCode: string, fallbackMessage: string) {
@@ -93,7 +91,6 @@ export default function LoginScreen() {
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Logo / Title */}
         <View style={styles.headerSection}>
           <Text style={[styles.title, { color: colors.text }]}>STEMM Lab</Text>
           <Text style={[styles.subtitle, { color: colors.subtitle }]}>
@@ -101,7 +98,6 @@ export default function LoginScreen() {
           </Text>
         </View>
 
-        {/* Card */}
         <View
           style={[
             styles.card,
@@ -169,7 +165,6 @@ export default function LoginScreen() {
           </Pressable>
         </View>
 
-        {/* Register link */}
         <Pressable
           onPress={() => router.replace('/register_screen')}
           style={({ pressed }) => [pressed && styles.buttonPressed]}
@@ -232,10 +227,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
     minHeight: 54,
     justifyContent: 'center',
-  },
-  buttonPressed: {
-    transform: [{ scale: 0.98 }],
-    opacity: 0.85,
   },
   buttonPressed: {
     transform: [{ scale: 0.98 }],
