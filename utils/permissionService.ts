@@ -1,9 +1,10 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Audio } from 'expo-av';
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
 import * as Sensors from 'expo-sensors';
 import { Alert, Linking, Platform } from 'react-native';
+
+import { secureDelete, secureGet, secureSet } from '@/utils/secureStorage';
 
 // ─── Motion sensor permission ─────────────────────────────────
 const MOTION_SOFT_BLOCK_KEY = 'stemm_motion_soft_blocked';
@@ -11,20 +12,20 @@ const MOTION_DENY_KEY = 'stemm_motion_deny_count';
 
 export async function getMotionSoftBlocked(): Promise<boolean> {
   try {
-    const value = await AsyncStorage.getItem(MOTION_SOFT_BLOCK_KEY);
+    const value = await secureGet(MOTION_SOFT_BLOCK_KEY);
     return value === 'true';
   } catch { return false; }
 }
 
 export async function setMotionSoftBlocked(blocked: boolean): Promise<void> {
   try {
-    await AsyncStorage.setItem(MOTION_SOFT_BLOCK_KEY, blocked ? 'true' : 'false');
+    await secureSet(MOTION_SOFT_BLOCK_KEY, blocked ? 'true' : 'false');
   } catch {}
 }
 
 async function getMotionDenyCount(): Promise<number> {
   try {
-    const value = await AsyncStorage.getItem(MOTION_DENY_KEY);
+    const value = await secureGet(MOTION_DENY_KEY);
     return value ? parseInt(value, 10) : 0;
   } catch { return 0; }
 }
@@ -32,12 +33,12 @@ async function getMotionDenyCount(): Promise<number> {
 async function incrementMotionDenyCount(): Promise<void> {
   try {
     const current = await getMotionDenyCount();
-    await AsyncStorage.setItem(MOTION_DENY_KEY, String(current + 1));
+    await secureSet(MOTION_DENY_KEY, String(current + 1));
   } catch {}
 }
 
 async function resetMotionDenyCount(): Promise<void> {
-  try { await AsyncStorage.removeItem(MOTION_DENY_KEY); } catch {}
+  try { await secureDelete(MOTION_DENY_KEY); } catch {}
 }
 
 export async function isMotionPermissionGranted(): Promise<boolean> {
@@ -100,14 +101,14 @@ const BATTERY_ENABLED_KEY = 'stemm_battery_enabled';
 
 export async function isBatteryPermissionGranted(): Promise<boolean> {
   try {
-    const value = await AsyncStorage.getItem(BATTERY_ENABLED_KEY);
+    const value = await secureGet(BATTERY_ENABLED_KEY);
     return value !== 'false';
   } catch { return true; }
 }
 
 export async function setBatteryPermissionGranted(granted: boolean): Promise<void> {
   try {
-    await AsyncStorage.setItem(BATTERY_ENABLED_KEY, granted ? 'true' : 'false');
+    await secureSet(BATTERY_ENABLED_KEY, granted ? 'true' : 'false');
   } catch {}
 }
 
@@ -121,7 +122,7 @@ const CAMERA_GRANTED_KEY = 'stemm_camera_granted';
 
 async function getCameraDenyCount(): Promise<number> {
   try {
-    const value = await AsyncStorage.getItem(CAMERA_DENY_COUNT_KEY);
+    const value = await secureGet(CAMERA_DENY_COUNT_KEY);
     return value ? parseInt(value, 10) : 0;
   } catch { return 0; }
 }
@@ -129,24 +130,24 @@ async function getCameraDenyCount(): Promise<number> {
 async function incrementCameraDenyCount(): Promise<void> {
   try {
     const current = await getCameraDenyCount();
-    await AsyncStorage.setItem(CAMERA_DENY_COUNT_KEY, String(current + 1));
+    await secureSet(CAMERA_DENY_COUNT_KEY, String(current + 1));
   } catch {}
 }
 
 async function resetCameraDenyCount(): Promise<void> {
-  try { await AsyncStorage.removeItem(CAMERA_DENY_COUNT_KEY); } catch {}
+  try { await secureDelete(CAMERA_DENY_COUNT_KEY); } catch {}
 }
 
 export async function isCameraPermissionGranted(): Promise<boolean> {
   try {
-    const value = await AsyncStorage.getItem(CAMERA_GRANTED_KEY);
+    const value = await secureGet(CAMERA_GRANTED_KEY);
     return value === 'true';
   } catch { return false; }
 }
 
 async function setCameraPermissionGranted(granted: boolean): Promise<void> {
   try {
-    await AsyncStorage.setItem(CAMERA_GRANTED_KEY, granted ? 'true' : 'false');
+    await secureSet(CAMERA_GRANTED_KEY, granted ? 'true' : 'false');
   } catch {}
 }
 
@@ -205,7 +206,7 @@ const MIC_GRANTED_KEY = 'stemm_mic_granted';
 
 async function getMicDenyCount(): Promise<number> {
   try {
-    const value = await AsyncStorage.getItem(MIC_DENY_COUNT_KEY);
+    const value = await secureGet(MIC_DENY_COUNT_KEY);
     return value ? parseInt(value, 10) : 0;
   } catch { return 0; }
 }
@@ -213,24 +214,24 @@ async function getMicDenyCount(): Promise<number> {
 async function incrementMicDenyCount(): Promise<void> {
   try {
     const current = await getMicDenyCount();
-    await AsyncStorage.setItem(MIC_DENY_COUNT_KEY, String(current + 1));
+    await secureSet(MIC_DENY_COUNT_KEY, String(current + 1));
   } catch {}
 }
 
 async function resetMicDenyCount(): Promise<void> {
-  try { await AsyncStorage.removeItem(MIC_DENY_COUNT_KEY); } catch {}
+  try { await secureDelete(MIC_DENY_COUNT_KEY); } catch {}
 }
 
 export async function isMicPermissionGranted(): Promise<boolean> {
   try {
-    const value = await AsyncStorage.getItem(MIC_GRANTED_KEY);
+    const value = await secureGet(MIC_GRANTED_KEY);
     return value === 'true';
   } catch { return false; }
 }
 
 async function setMicPermissionGranted(granted: boolean): Promise<void> {
   try {
-    await AsyncStorage.setItem(MIC_GRANTED_KEY, granted ? 'true' : 'false');
+    await secureSet(MIC_GRANTED_KEY, granted ? 'true' : 'false');
   } catch {}
 }
 
@@ -274,14 +275,12 @@ export async function revokeMicPermission(): Promise<void> {
 }
 
 // ─── Media Library permission ─────────────────────────────────
-// Used by Activities 1 & 3 to save recorded videos to the device
-// gallery and to pick existing videos/photos from the library.
 const MEDIA_LIBRARY_DENY_COUNT_KEY = 'stemm_media_library_deny_count';
 const MEDIA_LIBRARY_GRANTED_KEY = 'stemm_media_library_granted';
 
 async function getMediaLibraryDenyCount(): Promise<number> {
   try {
-    const value = await AsyncStorage.getItem(MEDIA_LIBRARY_DENY_COUNT_KEY);
+    const value = await secureGet(MEDIA_LIBRARY_DENY_COUNT_KEY);
     return value ? parseInt(value, 10) : 0;
   } catch { return 0; }
 }
@@ -289,24 +288,24 @@ async function getMediaLibraryDenyCount(): Promise<number> {
 async function incrementMediaLibraryDenyCount(): Promise<void> {
   try {
     const current = await getMediaLibraryDenyCount();
-    await AsyncStorage.setItem(MEDIA_LIBRARY_DENY_COUNT_KEY, String(current + 1));
+    await secureSet(MEDIA_LIBRARY_DENY_COUNT_KEY, String(current + 1));
   } catch {}
 }
 
 async function resetMediaLibraryDenyCount(): Promise<void> {
-  try { await AsyncStorage.removeItem(MEDIA_LIBRARY_DENY_COUNT_KEY); } catch {}
+  try { await secureDelete(MEDIA_LIBRARY_DENY_COUNT_KEY); } catch {}
 }
 
 export async function isMediaLibraryPermissionGranted(): Promise<boolean> {
   try {
-    const value = await AsyncStorage.getItem(MEDIA_LIBRARY_GRANTED_KEY);
+    const value = await secureGet(MEDIA_LIBRARY_GRANTED_KEY);
     return value === 'true';
   } catch { return false; }
 }
 
 async function setMediaLibraryPermissionGranted(granted: boolean): Promise<void> {
   try {
-    await AsyncStorage.setItem(MEDIA_LIBRARY_GRANTED_KEY, granted ? 'true' : 'false');
+    await secureSet(MEDIA_LIBRARY_GRANTED_KEY, granted ? 'true' : 'false');
   } catch {}
 }
 

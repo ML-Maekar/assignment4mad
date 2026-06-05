@@ -1,5 +1,3 @@
-import AppScreen from '@/components/AppScreen';
-import { useAppTheme } from '@/contexts/AppThemeContext';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
@@ -88,7 +86,6 @@ export default function RegisterScreen() {
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Header */}
         <View style={styles.headerSection}>
           <Text style={[styles.title, { color: colors.text }]}>STEMM Lab</Text>
           <Text style={[styles.subtitle, { color: colors.subtitle }]}>
@@ -96,30 +93,15 @@ export default function RegisterScreen() {
           </Text>
         </View>
 
-        {/* Card */}
-        <View
-          style={[
-            styles.card,
-            { backgroundColor: colors.card, borderColor: colors.border },
-          ]}
-        >
-          <Text style={[styles.cardTitle, { color: colors.text }]}>
-            Register
-          </Text>
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.cardTitle, { color: colors.text }]}>Register</Text>
 
           <Text style={[styles.helperText, { color: colors.subtitle }]}>
             Create an account to save your team and activity results.
           </Text>
 
           <TextInput
-            style={[
-              styles.input,
-              {
-                color: colors.text,
-                borderColor: colors.border,
-                backgroundColor: colors.background,
-              },
-            ]}
+            style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
             placeholder="Email address"
             placeholderTextColor={colors.subtitle}
             autoCapitalize="none"
@@ -129,14 +111,7 @@ export default function RegisterScreen() {
           />
 
           <TextInput
-            style={[
-              styles.input,
-              {
-                color: colors.text,
-                borderColor: colors.border,
-                backgroundColor: colors.background,
-              },
-            ]}
+            style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
             placeholder="Password (min 6 characters)"
             placeholderTextColor={colors.subtitle}
             secureTextEntry
@@ -145,14 +120,7 @@ export default function RegisterScreen() {
           />
 
           <TextInput
-            style={[
-              styles.input,
-              {
-                color: colors.text,
-                borderColor: colors.border,
-                backgroundColor: colors.background,
-              },
-            ]}
+            style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
             placeholder="Confirm password"
             placeholderTextColor={colors.subtitle}
             secureTextEntry
@@ -175,7 +143,6 @@ export default function RegisterScreen() {
           </Pressable>
         </View>
 
-        {/* Login link */}
         <Pressable
           onPress={() => router.replace('/login_screen')}
           style={({ pressed }) => [pressed && styles.buttonPressed]}
@@ -243,10 +210,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
     minHeight: 54,
     justifyContent: 'center',
-  },
-  buttonPressed: {
-    transform: [{ scale: 0.98 }],
-    opacity: 0.85,
   },
   buttonPressed: {
     transform: [{ scale: 0.98 }],

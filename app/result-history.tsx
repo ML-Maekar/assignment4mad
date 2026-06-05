@@ -1,7 +1,6 @@
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Pressable,
   StyleSheet,
@@ -31,66 +30,14 @@ const ACTIVITY_FILTERS = [
   { key: 'activity-seven', label: 'Activity 7' },
 ];
 
-function formatDate(value: string) {
+function formatDateTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
 }
 
-function parseData(dataJson: string) {
-  try {
-    return JSON.parse(dataJson) as Record<string, unknown>;
-  } catch {
-    return {};
-  }
-}
-
-function getResultSummary(record: ActivityResultRecord) {
-  const data = parseData(record.dataJson);
-
-  if (record.activityKey === 'activity-one') {
-    const speed = data.finalSpeedMetresPerSecond;
-    const gForce = data.gForce;
-    const safety = data.safetyMessage;
-
-    if (typeof gForce === 'number') {
-      return `Speed: ${Number(speed).toFixed(2)} m/s | G-force: ${gForce.toFixed(
-        2
-      )} g`;
-    }
-
-    if (typeof speed === 'number') {
-      return `Speed: ${speed.toFixed(2)} m/s`;
-    }
-
-    if (typeof safety === 'string') {
-      return safety;
-    }
-  }
-
-  if (record.activityKey === 'activity-two') {
-    const db = data.maximumSoundDb;
-    const risk = data.hearingRisk;
-
-    if (typeof db === 'number') {
-      return `Maximum sound: ${db.toFixed(1)} dB${
-        typeof risk === 'string' ? ` | ${risk}` : ''
-      }`;
-    }
-  }
-
-  if (record.activityKey === 'activity-three') {
-    const force = data.approximateForce;
-    const material = data.targetMaterial;
-
-    if (typeof force === 'number') {
-      return `Approx. force: ${force.toFixed(3)} N${
-        typeof material === 'string' ? ` | ${material}` : ''
-      }`;
-    }
-  }
-
-  return `Score: ${record.score.toFixed(2)}`;
+function getFilterLabel(filterKey: string) {
+  return ACTIVITY_FILTERS.find((f) => f.key === filterKey)?.label ?? 'All';
 }
 
 function getTeamName(result: ActivityResultRecord): string | null {
@@ -118,9 +65,9 @@ export default function ResultHistoryScreen() {
     try {
       setLoading(true);
 
-      if (selectedActivityKey) {
+      if (selectedFilter !== 'all') {
         const { results: fetchedResults, source } =
-          await getFirestoreResultsByActivity(selectedActivityKey);
+          await getFirestoreResultsByActivity(selectedFilter);
         setResults(fetchedResults);
         setDataSource(source);
       } else {
@@ -133,7 +80,7 @@ export default function ResultHistoryScreen() {
       console.log('Failed to load result history:', error);
       Alert.alert('Load Failed', 'Result history could not be loaded.');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   }, [selectedFilter]);
 
@@ -143,10 +90,22 @@ export default function ResultHistoryScreen() {
     }, [loadResults])
   );
 
-  const confirmDelete = (record: ActivityResultRecord) => {
+  const selectFilter = (key: string) => {
+    setSelectedFilter(key);
+  };
+
+  const openResultSummary = (resultId: number) => {
+    router.push(`/result-summary?resultId=${resultId}` as never);
+  };
+
+  const openLeaderboard = (activityKey: string) => {
+    router.push(`/leaderboard?activityKey=${activityKey}` as never);
+  };
+
+  const deleteResult = (result: ActivityResultRecord) => {
     Alert.alert(
       'Delete Result',
-      `Delete "${record.label}" from Result History?`,
+      `Delete "${result.label}" from Result History?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -165,6 +124,17 @@ export default function ResultHistoryScreen() {
       ]
     );
   };
+
+  if (loading) {
+    return (
+      <AppScreen>
+        <View style={styles.header}>
+          <Text style={[styles.title, { color: colors.text }]}>Result History</Text>
+        </View>
+        <Text style={[styles.emptyText, { color: colors.subtitle }]}>Loading...</Text>
+      </AppScreen>
+    );
+  }
 
   return (
     <AppScreen>
@@ -188,10 +158,10 @@ export default function ResultHistoryScreen() {
         <Text style={[styles.cardTitle, { color: colors.text }]}>Filter Results</Text>
         <View style={styles.filterGrid}>
           {ACTIVITY_FILTERS.map((filter) => {
-            const isSelected = selectedActivityKey === filter.key;
+            const isSelected = selectedFilter === filter.key;
             return (
               <Pressable
-                key={filter.label}
+                key={filter.key}
                 onPress={() => selectFilter(filter.key)}
                 style={({ pressed }) => [
                   styles.filterButton,
@@ -214,12 +184,12 @@ export default function ResultHistoryScreen() {
       {/* Results Card */}
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Text style={[styles.cardTitle, { color: colors.text }]}>
-          {getFilterLabel(selectedActivityKey)} Attempts
+          {getFilterLabel(selectedFilter)} Attempts
         </Text>
 
         {results.length === 0 ? (
           <Text style={[styles.emptyText, { color: colors.subtitle }]}>
-            No saved results yet for {getFilterLabel(selectedActivityKey)}.
+            No saved results yet for {getFilterLabel(selectedFilter)}.
             Complete an activity to save your first attempt.
           </Text>
         ) : (
@@ -236,7 +206,6 @@ export default function ResultHistoryScreen() {
                       {result.label}
                     </Text>
 
-                    {/* Team name */}
                     {teamName && (
                       <Text style={[styles.teamName, { color: colors.tint }]}>
                         🏷 {teamName}
@@ -335,8 +304,6 @@ export default function ResultHistoryScreen() {
 }
 
 const styles = StyleSheet.create({
-  centerContent: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 12, fontSize: 15, fontWeight: '700' },
   header: { marginBottom: 24 },
   title: { fontSize: 32, fontWeight: '900' },
   subtitle: { marginTop: 8, fontSize: 16, lineHeight: 22 },
