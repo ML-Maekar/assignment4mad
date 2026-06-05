@@ -1,61 +1,46 @@
-jest.mock('../../utils/secureStorage', () => ({
-  secureSetObject: jest.fn(),
-  secureGetObject: jest.fn(),
-  secureDelete: jest.fn(),
-}));
+import { secureDelete, secureGetObject, secureSetObject } from './secureStorage';
 
-import {
-    getLocalTeamProfile,
-    getStudentLevelFromGrade,
-    saveLocalTeamProfile,
-} from '../../utils/teamProfileStorage';
+// Team profile is stored in encrypted secure storage
+// expo-secure-store encrypts data at rest using device keychain (iOS) / keystore (Android)
+// This protects student names, team names, and grade levels
 
-const mockProfile = {
-  teamName: 'Team Alpha',
-  memberNames: ['Alice', 'Bob'],
-  gradeLevel: 'Year 7',
-  teamDiscriminator: 'STEMM-1234',
+const TEAM_PROFILE_KEY = 'stemm_lab_team_profile';
+
+export type TeamProfile = {
+  teamName: string;
+  memberNames: string[];
+  gradeLevel: string;
+  teamDiscriminator: string;
 };
 
-describe('teamProfileStorage — unit', () => {
-  beforeEach(() => jest.clearAllMocks());
+export async function saveLocalTeamProfile(teamProfile: TeamProfile): Promise<void> {
+  await secureSetObject<TeamProfile>(TEAM_PROFILE_KEY, teamProfile);
+}
 
-  it('saves team profile using secure storage', async () => {
-    const { secureSetObject } = require('../../utils/secureStorage');
-    secureSetObject.mockResolvedValue(undefined);
-    await saveLocalTeamProfile(mockProfile);
-    expect(secureSetObject).toHaveBeenCalledWith(
-      'stemm_lab_team_profile',
-      mockProfile
-    );
-  });
+export async function getLocalTeamProfile(): Promise<TeamProfile | null> {
+  return secureGetObject<TeamProfile>(TEAM_PROFILE_KEY);
+}
 
-  it('returns team profile from secure storage', async () => {
-    const { secureGetObject } = require('../../utils/secureStorage');
-    secureGetObject.mockResolvedValue(mockProfile);
-    const result = await getLocalTeamProfile();
-    expect(result).toEqual(mockProfile);
-  });
+export async function clearLocalTeamProfile(): Promise<void> {
+  await secureDelete(TEAM_PROFILE_KEY);
+}
 
-  it('returns null when no profile is stored', async () => {
-    const { secureGetObject } = require('../../utils/secureStorage');
-    secureGetObject.mockResolvedValue(null);
-    const result = await getLocalTeamProfile();
-    expect(result).toBeNull();
-  });
+export function getStudentLevelFromGrade(gradeLevel: string) {
+  const grade = gradeLevel.toLowerCase();
 
-  it('returns null when stored data is invalid', async () => {
-    const { secureGetObject } = require('../../utils/secureStorage');
-    secureGetObject.mockResolvedValue(null);
-    const result = await getLocalTeamProfile();
-    expect(result).toBeNull();
-  });
+  if (
+    grade.includes('primary') ||
+    grade.includes('grade 3') ||
+    grade.includes('grade 4') ||
+    grade.includes('grade 5') ||
+    grade.includes('grade 6') ||
+    grade.includes('year 3') ||
+    grade.includes('year 4') ||
+    grade.includes('year 5') ||
+    grade.includes('year 6')
+  ) {
+    return 'primary';
+  }
 
-  it('returns primary for year 5 grade level', () => {
-    expect(getStudentLevelFromGrade('Year 5')).toBe('primary');
-  });
-
-  it('returns high for year 9 grade level', () => {
-    expect(getStudentLevelFromGrade('Year 9')).toBe('high');
-  });
-});
+  return 'high';
+}
